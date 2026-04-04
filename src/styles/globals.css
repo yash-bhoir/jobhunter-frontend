@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { @apply bg-gray-50 text-gray-900; }
+
+  ::-webkit-scrollbar       { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+}
+
+@layer components {
+  /* Buttons */
+  .btn           { @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer; }
+  .btn-primary   { @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500; }
+  .btn-secondary { @apply bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-400; }
+  .btn-danger    { @apply bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 focus:ring-red-400; }
+  .btn-ghost     { @apply text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:ring-gray-400; }
+  .btn-sm        { @apply text-xs px-3 py-1.5; }
+  .btn-lg        { @apply text-base px-6 py-3; }
+  .btn-icon      { @apply p-2 rounded-lg; }
+
+  /* Cards */
+  .card        { @apply bg-white rounded-xl border border-gray-200 shadow-sm; }
+  .card-body   { @apply p-5; }
+  .card-header { @apply px-5 py-4 border-b border-gray-100; }
+
+  /* Forms */
+  .input       { @apply w-full px-3 py-2.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-900 placeholder-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
+  .input-error { @apply border-red-400 focus:ring-red-400; }
+  .label       { @apply block text-sm font-medium text-gray-700 mb-1.5; }
+  .error-text  { @apply text-xs text-red-600 mt-1; }
+
+  /* Badges */
+  .badge        { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  .badge-green  { @apply bg-green-100 text-green-800; }
+  .badge-blue   { @apply bg-blue-100 text-blue-800; }
+  .badge-amber  { @apply bg-amber-100 text-amber-800; }
+  .badge-red    { @apply bg-red-100 text-red-800; }
+  .badge-gray   { @apply bg-gray-100 text-gray-700; }
+  .badge-purple { @apply bg-purple-100 text-purple-800; }
+
+  /* Skeleton */
+  .skeleton { @apply animate-pulse bg-gray-200 rounded; }
+}
+
+/* ── Dark Mode — plain CSS (no @apply to avoid circular deps) ───── */
+.dark body         { background-color: #030712; color: #f9fafb; }
+.dark .card        { background-color: #111827; border-color: #1f2937; }
+.dark .card-header { border-color: #1f2937; }
+
+/* Inputs */
+.dark .input {
+  background-color: #1f2937;
+  border-color:     #374151;
+  color:            #f9fafb;
+}
+.dark .input::placeholder { color: #6b7280; }
+.dark .label  { color: #d1d5db; }
+
+/* Buttons */
+.dark .btn-secondary {
+  background-color: #1f2937;
+  color:            #d1d5db;
+  border-color:     #374151;
+}
+.dark .btn-secondary:hover { background-color: #374151; }
+
+/* Layout */
+.dark header { background-color: #111827; border-color: #1f2937; }
+.dark aside  { background-color: #111827; border-color: #1f2937; }
+
+/* Backgrounds */
+.dark .bg-white   { background-color: #111827 !important; }
+.dark .bg-gray-50 { background-color: #030712 !important; }
+
+/* Text */
+.dark .text-gray-900 { color: #f9fafb !important; }
+.dark .text-gray-800 { color: #f3f4f6 !important; }
+.dark .text-gray-700 { color: #d1d5db !important; }
+.dark .text-gray-600 { color: #9ca3af !important; }
+
+/* Borders */
+.dark .border-gray-200 { border-color: #1f2937 !important; }
+.dark .border-gray-100 { border-color: #1f2937 !important; }
+.dark .divide-gray-100 > * + * { border-color: #1f2937; }
+
+/* Hovers */
+.dark .hover\:bg-gray-50:hover  { background-color: #1f2937 !important; }
+.dark .hover\:bg-gray-100:hover { background-color: #1f2937 !important; }
+
+/* Skeleton */
+.dark .skeleton { background-color: #374151; }
+
+/* Nav links */
+.dark .text-gray-500 { color: #6b7280; }
+.dark .text-gray-400 { color: #4b5563; }
+
+/* Select & option */
+.dark select { background-color: #1f2937; color: #f9fafb; border-color: #374151; }
+.dark option { background-color: #1f2937; color: #f9fafb; }
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar-thumb { background-color: #374151; }
