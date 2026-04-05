@@ -6,7 +6,7 @@ import { useToast }   from '@hooks/useToast';
 import { api }        from '@utils/axios';
 import { cn }         from '@utils/helpers';
 import { fDateTime }  from '@utils/formatters';
-import { CREDIT_COSTS, PLAN_CREDITS } from '@utils/constants';
+import { CREDIT_COSTS as FALLBACK_COSTS } from '@utils/constants';
 
 const TOPUP_PACKS = [
   { name: 'Starter',  credits: 50,  price: 99,  popular: false },
@@ -17,14 +17,20 @@ const TOPUP_PACKS = [
 export default function Credits() {
   const { credits, remaining, usagePct } = useCredits();
   const toast = useToast();
-  const [activity, setActivity] = useState([]);
-  const [loading,  setLoading]  = useState(true);
+  const [activity,    setActivity]    = useState([]);
+  const [creditCosts, setCreditCosts] = useState(FALLBACK_COSTS);
+  const [loading,     setLoading]     = useState(true);
 
   useEffect(() => {
-    api.get('/user/activity?limit=15')
-      .then(r => setActivity(r.data.data?.logs || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      api.get('/user/activity?limit=15').catch(() => ({ data: { data: { logs: [] } } })),
+      api.get('/config/public').catch(() => null),
+    ]).then(([actRes, cfgRes]) => {
+      setActivity(actRes.data.data?.logs || []);
+      if (cfgRes?.data?.data?.creditCosts) {
+        setCreditCosts({ ...FALLBACK_COSTS, ...cfgRes.data.data.creditCosts });
+      }
+    }).finally(() => setLoading(false));
   }, []);
 
   const creditColor = usagePct >= 80 ? 'red' : usagePct >= 50 ? 'amber' : 'green';
@@ -81,7 +87,7 @@ export default function Credits() {
       <div className="card card-body">
         <h2 className="font-semibold text-gray-900 mb-4">Usage Breakdown</h2>
         <div className="space-y-3">
-          {Object.entries(CREDIT_COSTS).map(([action, cost]) => {
+          {Object.entries(creditCosts).map(([action, cost]) => {
             const label = action.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
             const used  = credits?.breakdown?.[action.toLowerCase()] || 0;
             return (
