@@ -1,26 +1,44 @@
 import { useState } from 'react';
-import { Building, Loader2, ChevronDown, ChevronUp, Star, Users, MapPin } from 'lucide-react';
+import { Building, Loader2, ChevronDown, ChevronUp, Star, Users, MapPin, Lock } from 'lucide-react';
 import { api } from '@utils/axios';
-import { cn }  from '@utils/helpers';
 
 export default function CompanyResearch({ jobId, company }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(false);
   const [open,    setOpen]    = useState(false);
+  const [locked,  setLocked]  = useState(false);
 
   const fetch = async () => {
+    if (locked) return;
     if (data) { setOpen(!open); return; }
     setLoading(true);
     try {
       const { data: res } = await api.get(`/jobs/${jobId}/company`);
       setData(res.data);
       setOpen(true);
-    } catch {
-      // silently fail
+    } catch (err) {
+      if (err.response?.status === 403) setLocked(true);
     } finally {
       setLoading(false);
     }
   };
+
+  if (locked) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Lock className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Company Research — Pro feature</p>
+            <p className="text-xs text-amber-600">AI-powered company insights, tech stack, ratings & salary data</p>
+          </div>
+        </div>
+        <a href="/billing" className="flex-shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors">
+          Upgrade
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-50 rounded-xl overflow-hidden">
