@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   Search, Briefcase, Mail, Users, TrendingUp,
-  ArrowRight, Star, Target, Plus,
-  ChevronRight, Sparkles,
+  ArrowRight, Star, Target, Plus, ChevronRight, Sparkles,
+  Zap, MapPin, Building,
 } from 'lucide-react';
 import { useAuth }    from '@hooks/useAuth';
 import { useCredits } from '@hooks/useCredits';
@@ -13,251 +14,293 @@ import { cn }         from '@utils/helpers';
 
 function getTimeOfDay() {
   const h = new Date().getHours();
-  if (h < 12) return 'morning';
-  if (h < 17) return 'afternoon';
-  return 'evening';
+  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
 }
 
 const STAT_CONFIG = [
-  { key: 'totalSearches', label: 'Searches',  icon: Search,    bg: 'bg-blue-50',    text: 'text-blue-600'   },
-  { key: 'totalJobs',     label: 'Jobs Found', icon: Briefcase, bg: 'bg-violet-50',  text: 'text-violet-600' },
-  { key: 'appliedJobs',   label: 'Applied',    icon: Target,    bg: 'bg-emerald-50', text: 'text-emerald-600'},
-  { key: 'interviewJobs', label: 'Interviews', icon: Star,      bg: 'bg-amber-50',   text: 'text-amber-600'  },
+  { key: 'totalSearches', label: 'Searches',    icon: Search,    from: '#3b82f6', to: '#2563eb', glow: 'rgba(59,130,246,0.3)'  },
+  { key: 'totalJobs',     label: 'Jobs Found',  icon: Briefcase, from: '#8b5cf6', to: '#7c3aed', glow: 'rgba(139,92,246,0.3)'  },
+  { key: 'appliedJobs',   label: 'Applied',     icon: Target,    from: '#10b981', to: '#059669', glow: 'rgba(16,185,129,0.3)'  },
+  { key: 'interviewJobs', label: 'Interviews',  icon: Star,      from: '#f59e0b', to: '#d97706', glow: 'rgba(245,158,11,0.3)'  },
 ];
 
 const QUICK_ACTIONS = [
-  { to: '/search',     label: 'Search Jobs',       sub: 'Find matching positions',  icon: Search,     color: 'blue'    },
-  { to: '/recruiters', label: 'Find HR Contacts',  sub: 'Discover decision makers', icon: Users,      color: 'cyan'    },
-  { to: '/outreach',   label: 'Send Outreach',     sub: 'Email recruiters directly', icon: Mail,      color: 'emerald' },
-  { to: '/profile',    label: 'Update Profile',    sub: 'Keep your data fresh',     icon: TrendingUp, color: 'violet'  },
+  { to: '/search',     label: 'Search Jobs',       sub: 'Find matching positions',   icon: Search,     bg: 'from-blue-500 to-blue-600'   },
+  { to: '/recruiters', label: 'Find HR Contacts',  sub: 'Discover decision makers',  icon: Users,      bg: 'from-cyan-500 to-cyan-600'   },
+  { to: '/outreach',   label: 'Send Outreach',     sub: 'Email recruiters directly', icon: Mail,       bg: 'from-emerald-500 to-emerald-600'},
+  { to: '/profile',    label: 'Update Profile',    sub: 'Keep your info fresh',      icon: TrendingUp, bg: 'from-violet-500 to-violet-600'},
 ];
 
-const ACTION_COLORS = {
-  blue:    { bg: 'bg-blue-50',    icon: 'text-blue-600',    hover: 'hover:bg-blue-50'    },
-  cyan:    { bg: 'bg-cyan-50',    icon: 'text-cyan-600',    hover: 'hover:bg-cyan-50'    },
-  emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-600', hover: 'hover:bg-emerald-50' },
-  violet:  { bg: 'bg-violet-50',  icon: 'text-violet-600',  hover: 'hover:bg-violet-50'  },
+const container = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+const item = {
+  hidden: { opacity: 0, y: 16 },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
 
 export default function Dashboard() {
   const { user }                = useAuth();
   const { remaining, usagePct } = useCredits();
-  const [stats,      setStats]  = useState(null);
-  const [recentJobs, setJobs]   = useState([]);
-  const [loading,    setLoad]   = useState(true);
+  const [stats,  setStats]  = useState(null);
+  const [jobs,   setJobs]   = useState([]);
+  const [loading,setLoad]   = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get('/user/stats').catch(() => ({ data: { data: null } })),
-      api.get('/jobs?limit=6&sort=matchScore').catch(() => ({ data: { data: [] } })),
-    ]).then(([s, j]) => {
-      setStats(s.data.data);
-      setJobs(j.data.data || []);
-    }).finally(() => setLoad(false));
+      api.get('/jobs?limit=5&sort=matchScore').catch(() => ({ data: { data: [] } })),
+    ]).then(([s, j]) => { setStats(s.data.data); setJobs(j.data.data || []); })
+      .finally(() => setLoad(false));
   }, []);
 
-  const firstName  = user?.profile?.firstName || 'there';
-  const creditColor = usagePct >= 80 ? 'text-red-500' : usagePct >= 50 ? 'text-amber-500' : 'text-emerald-500';
-  const barColor    = usagePct >= 80 ? 'bg-red-500'   : usagePct >= 50 ? 'bg-amber-500'   : 'bg-emerald-500';
+  const firstName   = user?.profile?.firstName || 'there';
+  const creditColor = usagePct >= 80 ? '#ef4444' : usagePct >= 50 ? '#f59e0b' : '#10b981';
+  const barColor    = usagePct >= 80 ? 'bg-red-500' : usagePct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5 animate-fade-in-up">
-
-      {/* ── Welcome banner ─────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-600 to-indigo-700 p-6 text-white shadow-elevated">
-        {/* Background decoration */}
+    <motion.div
+      variants={container}
+      initial="hidden"
+      animate="show"
+      className="max-w-6xl mx-auto space-y-5 pb-6"
+    >
+      {/* ── Hero welcome ─────────────────────────────────────────── */}
+      <motion.div variants={item} className="relative overflow-hidden rounded-3xl p-7 text-white"
+        style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3730a3 50%, #5b21b6 100%)', boxShadow: '0 20px 60px -12px rgba(37,99,235,0.4)' }}
+      >
+        {/* Floating orbs */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/5" />
-          <div className="absolute -bottom-10 -left-6 w-52 h-52 rounded-full bg-white/5" />
-          <div className="absolute top-4 right-20 w-20 h-20 rounded-full bg-white/5" />
+          <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/5 blur-xl" />
+          <div className="absolute -bottom-16 -left-8 w-64 h-64 rounded-full bg-white/5 blur-2xl" />
+          <div className="absolute top-6 right-1/3 w-24 h-24 rounded-full bg-white/5 blur-lg" />
         </div>
-        <div className="relative flex items-center justify-between gap-4">
+        <div className="relative flex items-start justify-between gap-4">
           <div>
-            <p className="text-blue-200 text-sm font-medium mb-1">Good {getTimeOfDay()}!</p>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Welcome back, {firstName} 👋
-            </h1>
-            <p className="text-blue-100 text-sm mt-1.5 max-w-xs">
-              Your AI-powered job search is ready. Let's find your next opportunity.
+            <p className="text-blue-200 text-sm font-medium mb-1">Good {getTimeOfDay()} 👋</p>
+            <h1 className="text-3xl font-black tracking-tight">Welcome back, {firstName}!</h1>
+            <p className="text-blue-200/80 text-sm mt-2 max-w-sm">
+              Your AI-powered job search is ready. Let's land your next opportunity.
             </p>
+            <div className="flex items-center gap-3 mt-5">
+              <Link to="/search" className="inline-flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-2xl hover:bg-blue-50 transition-colors shadow-lg">
+                <Plus className="w-4 h-4" /> New Search
+              </Link>
+              <Link to="/results" className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white font-semibold text-sm px-4 py-2.5 rounded-2xl transition-colors backdrop-blur-sm">
+                View Results <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
           </div>
-          <Link
-            to="/search"
-            className="flex-shrink-0 flex items-center gap-2 bg-white text-blue-700 font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-blue-50 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">New Search</span>
-            <span className="sm:hidden">Search</span>
-          </Link>
+          <div className="hidden sm:flex flex-col items-end gap-2">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[100px]">
+              <p className="text-2xl font-black" style={{ color: creditColor === '#10b981' ? '#6ee7b7' : creditColor === '#f59e0b' ? '#fde68a' : '#fca5a5' }}>{remaining}</p>
+              <p className="text-xs text-blue-200 font-medium">credits left</p>
+            </div>
+            <span className={cn('badge capitalize text-xs font-bold', user?.plan === 'pro' ? 'badge-blue' : user?.plan === 'team' ? 'badge-purple' : 'badge-gray')}>
+              {user?.plan || 'free'} plan
+            </span>
+          </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* ── Stats row ──────────────────────────────────────────── */}
+      {/* ── Stats grid ───────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {STAT_CONFIG.map(({ key, label, icon: Icon, bg, text }) => {
+        {STAT_CONFIG.map(({ key, label, icon: Icon, from, to, glow }, i) => {
           const value = stats?.[key] ?? 0;
           return (
-            <div key={key} className="card card-body group hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500">{label}</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1 tabular-nums">
-                    {loading ? <span className="skeleton inline-block w-8 h-7 rounded" /> : value}
-                  </p>
+            <motion.div
+              key={key}
+              variants={item}
+              className="group relative bg-white rounded-2xl border border-gray-100 p-5 overflow-hidden cursor-default"
+              style={{ boxShadow: '0 2px 8px -2px rgba(0,0,0,0.06)' }}
+              whileHover={{ y: -3, boxShadow: `0 12px 24px -6px ${glow}` }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Gradient bg circle */}
+              <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full opacity-10 transition-opacity group-hover:opacity-20"
+                style={{ background: `radial-gradient(circle, ${from}, ${to})` }}
+              />
+              <div className="relative">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                  style={{ background: `linear-gradient(135deg, ${from}, ${to})`, boxShadow: `0 4px 12px ${glow}` }}
+                >
+                  <Icon className="w-5 h-5 text-white" />
                 </div>
-                <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0', bg)}>
-                  <Icon className={cn('w-4.5 h-4.5', text)} style={{width:'18px',height:'18px'}} />
-                </div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+                <p className="text-3xl font-black text-gray-900 mt-1 tabular-nums">
+                  {loading ? <span className="skeleton inline-block w-10 h-8 rounded-lg align-middle" /> : value}
+                </p>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
 
-        {/* ── Recent jobs ────────────────────────────────────── */}
-        <div className="lg:col-span-2 card overflow-hidden">
-          <div className="card-header flex items-center justify-between">
+        {/* ── Recent jobs ──────────────────────────────────────── */}
+        <motion.div variants={item} className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 overflow-hidden"
+          style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}
+        >
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <div>
-              <h2 className="font-semibold text-gray-900">Recent Matches</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Sorted by match score</p>
+              <h2 className="font-bold text-gray-900">Recent Job Matches</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Sorted by AI match score</p>
             </div>
-            <Link to="/results" className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors">
+            <Link to="/results" className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors">
               View all <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
 
           {loading ? (
             <div className="divide-y divide-gray-100">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="p-4 flex items-center gap-3">
-                  <div className="skeleton w-9 h-9 rounded-xl flex-shrink-0" />
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-4">
+                  <div className="skeleton w-10 h-10 rounded-xl flex-shrink-0" />
                   <div className="flex-1 space-y-2">
-                    <div className="skeleton h-3 w-3/4 rounded" />
-                    <div className="skeleton h-2.5 w-1/2 rounded" />
+                    <div className="skeleton h-3.5 w-3/4 rounded-lg" />
+                    <div className="skeleton h-3 w-1/2 rounded-lg" />
                   </div>
-                  <div className="skeleton h-5 w-10 rounded-full" />
+                  <div className="skeleton h-6 w-12 rounded-full" />
                 </div>
               ))}
             </div>
-          ) : recentJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+          ) : jobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-14 text-center px-6">
+              <div className="w-14 h-14 rounded-3xl bg-blue-50 flex items-center justify-center mb-4">
                 <Search className="w-7 h-7 text-blue-400" />
               </div>
-              <p className="font-semibold text-gray-900 mb-1">No jobs yet</p>
-              <p className="text-sm text-gray-400 mb-4">Run your first AI-powered job search</p>
-              <Link to="/search" className="btn btn-primary btn-sm">
-                <Search className="w-3.5 h-3.5" /> Start Searching
+              <p className="font-bold text-gray-900 mb-1">No jobs yet</p>
+              <p className="text-sm text-gray-400 mb-5">Run your first AI-powered search</p>
+              <Link to="/search" className="btn btn-primary">
+                <Search className="w-4 h-4" /> Start Searching
               </Link>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {recentJobs.map(job => (
-                <div key={job._id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors group">
-                  {/* Company avatar */}
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-600 font-bold text-xs flex-shrink-0">
+              {jobs.map((job, i) => (
+                <motion.div
+                  key={job._id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 + i * 0.06 }}
+                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors group cursor-pointer"
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0"
+                    style={{ background: `hsl(${(job.company?.charCodeAt(0) || 65) * 5 % 360}, 65%, 55%)` }}
+                  >
                     {job.company?.[0]?.toUpperCase() || '?'}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-gray-900 text-sm truncate">{job.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{job.company} · {job.location}</p>
+                    <p className="font-semibold text-gray-900 text-sm truncate group-hover:text-blue-700 transition-colors">{job.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                      <Building className="w-3 h-3" /> {job.company}
+                      {job.location && <><MapPin className="w-3 h-3 ml-1" /> {job.location}</>}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={cn(
-                      'badge text-xs',
-                      job.matchScore >= 75 ? 'badge-green' :
-                      job.matchScore >= 50 ? 'badge-amber' : 'badge-gray'
-                    )}>
-                      {job.matchScore}%
-                    </span>
-                    {job.postedAt && (
-                      <span className="hidden sm:block text-xs text-gray-400">{fAgo(job.postedAt)}</span>
-                    )}
-                  </div>
-                </div>
+                  <span className={cn(
+                    'text-xs font-bold px-2.5 py-1 rounded-full border flex-shrink-0',
+                    job.matchScore >= 75 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    job.matchScore >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                    'bg-gray-100 text-gray-500 border-gray-200'
+                  )}>
+                    {job.matchScore}%
+                  </span>
+                </motion.div>
               ))}
             </div>
           )}
-        </div>
+        </motion.div>
 
-        {/* ── Right column ───────────────────────────────────── */}
+        {/* ── Right column ─────────────────────────────────────── */}
         <div className="space-y-4">
 
-          {/* Credits card */}
-          <div className="card card-body">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900 text-sm">Credits</h3>
-              <Link to="/credits" className="text-xs text-blue-600 hover:text-blue-700 font-medium">Top up →</Link>
+          {/* Credits */}
+          <motion.div variants={item} className="bg-white rounded-3xl border border-gray-100 p-5"
+            style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Monthly Credits</p>
+                <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: creditColor }}>{remaining}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                style={{ background: `linear-gradient(135deg, ${creditColor}20, ${creditColor}10)` }}
+              >
+                <Zap className="w-6 h-6" style={{ color: creditColor }} />
+              </div>
             </div>
-            <div className="flex items-end gap-1.5 mb-3">
-              <span className={cn('text-3xl font-bold tabular-nums', creditColor)}>{remaining}</span>
-              <span className="text-gray-400 text-sm mb-0.5">remaining</span>
-            </div>
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className={cn('h-full rounded-full transition-all duration-500', barColor)}
-                style={{ width: `${Math.min(usagePct, 100)}%` }}
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(usagePct, 100)}%` }}
+                transition={{ duration: 0.8, delay: 0.3 }}
+                className={cn('h-full rounded-full', barColor)}
               />
             </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1.5">
-              <span>{usagePct}% used</span>
-              <span className={cn('font-medium capitalize badge', user?.plan === 'pro' ? 'badge-blue' : user?.plan === 'team' ? 'badge-purple' : 'badge-gray')}>
-                {user?.plan || 'free'}
-              </span>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400">{usagePct}% used</span>
+              <Link to="/credits" className="font-semibold text-blue-600 hover:text-blue-700">Top up →</Link>
             </div>
             {usagePct >= 80 && (
-              <div className="mt-3 p-2.5 bg-red-50 rounded-xl">
-                <p className="text-xs text-red-700 font-medium">Running low on credits</p>
-                <Link to="/billing" className="text-xs text-red-600 hover:text-red-700 underline mt-0.5 block">Upgrade plan</Link>
+              <div className="mt-3 p-3 bg-red-50 rounded-xl border border-red-100">
+                <p className="text-xs font-semibold text-red-700 mb-1">Running low!</p>
+                <Link to="/billing" className="text-xs text-red-600 hover:underline font-medium">Upgrade your plan →</Link>
               </div>
             )}
-          </div>
+          </motion.div>
 
-          {/* Quick actions */}
-          <div className="card overflow-hidden">
-            <div className="card-header">
-              <h3 className="font-semibold text-gray-900 text-sm">Quick Actions</h3>
+          {/* Quick Actions */}
+          <motion.div variants={item} className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
+            style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}
+          >
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-bold text-gray-900 text-sm">Quick Actions</h3>
             </div>
             <div className="divide-y divide-gray-100">
-              {QUICK_ACTIONS.map(({ to, label, sub, icon: Icon, color }) => {
-                const c = ACTION_COLORS[color];
-                return (
-                  <Link
-                    key={to}
-                    to={to}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors group"
-                  >
-                    <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0', c.bg)}>
-                      <Icon className={cn('w-4 h-4', c.icon)} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 leading-none">{label}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">{sub}</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-400 flex-shrink-0 transition-colors" />
-                  </Link>
-                );
-              })}
+              {QUICK_ACTIONS.map(({ to, label, sub, icon: Icon, bg }) => (
+                <Link
+                  key={to}
+                  to={to}
+                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors group"
+                >
+                  <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm bg-gradient-to-br', bg)}>
+                    <Icon className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 leading-tight">{label}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{sub}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 flex-shrink-0 transition-colors" />
+                </Link>
+              ))}
             </div>
-          </div>
+          </motion.div>
 
-          {/* AI tip card */}
-          <div className="card card-body bg-gradient-to-br from-violet-50 to-indigo-50 border-violet-100">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-4 h-4 text-violet-600" />
-              <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">AI Tip</p>
+          {/* AI tip */}
+          <motion.div variants={item}
+            className="relative overflow-hidden rounded-3xl p-5"
+            style={{ background: 'linear-gradient(135deg, #ede9fe, #ddd6fe, #c4b5fd)', boxShadow: '0 4px 20px -4px rgba(139,92,246,0.25)' }}
+          >
+            <div className="absolute -right-6 -bottom-6 w-28 h-28 rounded-full bg-violet-400/20 blur-2xl" />
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-violet-500 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">AI Tip</p>
+              </div>
+              <p className="text-sm text-violet-900 leading-relaxed font-medium">
+                Upload your resume to unlock personalised job matching and ATS-optimised emails.
+              </p>
+              <Link to="/profile?tab=resume" className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-violet-700 hover:text-violet-900 transition-colors">
+                Upload Resume <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
-            <p className="text-sm text-violet-900 leading-relaxed">
-              Upload your resume to get personalised job recommendations and ATS-optimised outreach emails.
-            </p>
-            <Link to="/profile" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:text-violet-800">
-              Update Resume <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
+          </motion.div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
