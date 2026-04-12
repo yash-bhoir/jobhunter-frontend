@@ -561,7 +561,7 @@ export default function Results() {
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
                     <MatchExplainer job={selected} />
                     <div className="border-t border-gray-100 pt-4">
-                      <CompanyResearch job={selected} />
+                      <CompanyResearch jobId={selected._id} company={selected.company} />
                     </div>
                   </motion.div>
                 )}
