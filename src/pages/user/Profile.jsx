@@ -269,7 +269,7 @@ export default function Profile() {
                       <input {...register('targetRole')} className="input" placeholder="Senior React Developer" />
                     </Field>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <Field label="Experience (yrs)">
                       <input {...register('experience')} type="number" min={0} max={50} className="input" />
                     </Field>
@@ -287,7 +287,7 @@ export default function Profile() {
                     </select>
                   </Field>
                   <Field label="Preferred Work Type">
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {WORK_TYPES.map(type => (
                         <label key={type} className="relative cursor-pointer">
                           <input {...register('workType')} type="radio" value={type} className="peer sr-only" />

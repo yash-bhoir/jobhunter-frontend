@@ -114,7 +114,7 @@ export default function Credits() {
       {/* Top-up packs */}
       <div>
         <h2 className="font-semibold text-gray-900 mb-3">Buy More Credits</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {TOPUP_PACKS.map(pack => (
             <div
               key={pack.name}

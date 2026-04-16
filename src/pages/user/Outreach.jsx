@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Mail, Send, Loader2, Sparkles, Trash2,
-  Clock, Building, User, AtSign, FileText
+  Mail, Send, Loader2, Sparkles, Trash2, X,
+  Clock, Building, User, AtSign, FileText, Plus, Users
 } from 'lucide-react';
 import { api }       from '@utils/axios';
 import { useToast }  from '@hooks/useToast';
@@ -22,8 +23,14 @@ const fadeUp = {
 };
 const stagger = { show: { transition: { staggerChildren: 0.07 } } };
 
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function Outreach() {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+
   const [emails,      setEmails]      = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [genLoading,  setGenLoading]  = useState(false);
@@ -31,11 +38,31 @@ export default function Outreach() {
   const [stats,       setStats]       = useState(null);
   const [tab,         setTab]         = useState('compose');
 
+  // Multi-recipient state
+  const [recipients,  setRecipients]  = useState([]);   // string[]
+  const [toInput,     setToInput]     = useState('');   // text in the "add email" field
+
   const [form, setForm] = useState({
-    company: '', jobTitle: '', recruiterName: '', to: '', subject: '', body: '',
+    company: '', jobTitle: '', recruiterName: '', subject: '', body: '',
   });
   const [generated, setGenerated] = useState(false);
   const [emailId,   setEmailId]   = useState(null);
+
+  // Populate from URL params on mount: ?to=a@x.com,b@x.com&company=X&jobTitle=Y
+  useEffect(() => {
+    const toParam      = searchParams.get('to')      || '';
+    const company      = searchParams.get('company') || '';
+    const jobTitle     = searchParams.get('jobTitle')|| '';
+    const recruiterName = searchParams.get('recruiterName') || '';
+
+    if (toParam) {
+      const parsed = toParam.split(',').map(e => e.trim()).filter(isValidEmail);
+      setRecipients(parsed);
+    }
+    if (company || jobTitle) {
+      setForm(prev => ({ ...prev, company, jobTitle, recruiterName }));
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchEmails();
@@ -49,6 +76,25 @@ export default function Outreach() {
       setEmails(data.data || []);
     } catch { toast.error('Failed to load emails'); }
     finally { setLoading(false); }
+  };
+
+  const addRecipient = (email) => {
+    const e = email.trim();
+    if (!isValidEmail(e)) { toast.error('Enter a valid email address'); return; }
+    if (recipients.includes(e)) { toast.error('Already added'); return; }
+    setRecipients(prev => [...prev, e]);
+    setToInput('');
+  };
+
+  const removeRecipient = (email) => {
+    setRecipients(prev => prev.filter(e => e !== email));
+  };
+
+  const handleToKeyDown = (evt) => {
+    if (evt.key === 'Enter' || evt.key === ',' || evt.key === ' ') {
+      evt.preventDefault();
+      if (toInput.trim()) addRecipient(toInput);
+    }
   };
 
   const generateEmail = async () => {
@@ -68,15 +114,30 @@ export default function Outreach() {
   };
 
   const sendEmail = async () => {
-    if (!form.to || !form.subject || !form.body) { toast.error('Fill in all fields before sending'); return; }
+    if (recipients.length === 0) { toast.error('Add at least one recipient'); return; }
+    if (!form.subject || !form.body) { toast.error('Generate or write the email first'); return; }
     setSendLoading(true);
     try {
-      await api.post('/outreach/send', {
-        to: form.to, subject: form.subject, body: form.body,
-        company: form.company, recruiterName: form.recruiterName, emailId,
-      });
-      toast.success('Email sent!');
-      setForm({ company: '', jobTitle: '', recruiterName: '', to: '', subject: '', body: '' });
+      if (recipients.length === 1) {
+        // Single send
+        await api.post('/outreach/send', {
+          to: recipients[0], subject: form.subject, body: form.body,
+          company: form.company, recruiterName: form.recruiterName, emailId,
+        });
+      } else {
+        // Bulk send
+        const emailPayloads = recipients.map(to => ({
+          to,
+          subject: form.subject,
+          body:    form.body,
+          company: form.company,
+          recruiterName: form.recruiterName,
+        }));
+        await api.post('/outreach/bulk', { emails: emailPayloads });
+      }
+      toast.success(`Email sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}!`);
+      setForm({ company: '', jobTitle: '', recruiterName: '', subject: '', body: '' });
+      setRecipients([]); setToInput('');
       setGenerated(false); setEmailId(null);
       fetchEmails(); setTab('sent');
     } catch (err) {
@@ -92,19 +153,20 @@ export default function Outreach() {
     } catch { toast.error('Failed to delete'); }
   };
 
-  const sentEmails = emails.filter(e => e.status !== 'pending');
+  const sentEmails   = emails.filter(e => e.status !== 'pending');
+  const creditCost   = recipients.length <= 1 ? 2 : recipients.length * 2;
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-5">
 
       {/* Header */}
-      <motion.div variants={fadeUp} className="flex items-start justify-between">
+      <motion.div variants={fadeUp} className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Outreach</h1>
           <p className="text-sm text-gray-400 mt-0.5">AI-powered personalized recruiter emails</p>
         </div>
         {/* Tab switcher */}
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl flex-shrink-0">
           {['compose', 'sent'].map(t => (
             <button
               key={t}
@@ -122,7 +184,7 @@ export default function Outreach() {
 
       {/* Stats row */}
       {stats && (
-        <motion.div variants={fadeUp} className="grid grid-cols-4 gap-3">
+        <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Total',   value: stats.total,   color: 'gray'    },
             { label: 'Sent',    value: stats.sent,    color: 'blue'    },
@@ -193,15 +255,64 @@ export default function Outreach() {
                   className="input"
                 />
               </Field>
-              <Field icon={AtSign} label="Send To *">
-                <input
-                  value={form.to}
-                  onChange={e => setForm(p => ({ ...p, to: e.target.value }))}
-                  placeholder="hr@company.com"
-                  className="input"
-                  type="email"
-                />
-              </Field>
+
+              {/* Multi-recipient field */}
+              <div>
+                <label className="label flex items-center gap-1.5">
+                  <AtSign className="w-3.5 h-3.5 text-gray-400" />
+                  Recipients *
+                  {recipients.length > 0 && (
+                    <span className="ml-auto text-[10px] bg-blue-100 text-blue-700 font-semibold px-1.5 py-0.5 rounded-full">
+                      {recipients.length} · {creditCost} cr
+                    </span>
+                  )}
+                </label>
+
+                {/* Chips */}
+                {recipients.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    <AnimatePresence>
+                      {recipients.map(email => (
+                        <motion.span
+                          key={email}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg font-medium"
+                        >
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span className="max-w-[160px] truncate">{email}</span>
+                          <button
+                            onClick={() => removeRecipient(email)}
+                            className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </motion.span>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    value={toInput}
+                    onChange={e => setToInput(e.target.value)}
+                    onKeyDown={handleToKeyDown}
+                    placeholder="hr@company.com (Enter or comma to add)"
+                    className="input flex-1 text-sm"
+                    type="email"
+                  />
+                  <button
+                    onClick={() => { if (toInput.trim()) addRecipient(toInput); }}
+                    className="px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 text-gray-500 hover:text-blue-600 transition-colors"
+                    title="Add recipient"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">Press Enter or comma to add multiple recipients</p>
+              </div>
 
               <button
                 onClick={generateEmail}
@@ -251,17 +362,26 @@ export default function Outreach() {
                 />
               </div>
 
+              {/* Send button — adapts for single vs multi */}
               <button
                 onClick={sendEmail}
-                disabled={sendLoading || !form.to || !form.subject || !form.body}
+                disabled={sendLoading || recipients.length === 0 || !form.subject || !form.body}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:opacity-90 transition-opacity disabled:opacity-40"
               >
                 {sendLoading
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
-                  : <><Send className="w-4 h-4" /> Send Email</>
+                  : recipients.length > 1
+                    ? <><Users className="w-4 h-4" /> Send to {recipients.length} recipients</>
+                    : <><Send className="w-4 h-4" /> Send Email</>
                 }
-                <span className="ml-1 text-xs bg-white/20 px-2 py-0.5 rounded-full">2 cr</span>
+                <span className="ml-1 text-xs bg-white/20 px-2 py-0.5 rounded-full">{creditCost} cr</span>
               </button>
+
+              {recipients.length > 1 && (
+                <p className="text-[10px] text-center text-gray-400">
+                  Same email sent to all {recipients.length} recipients · 2 credits each
+                </p>
+              )}
             </div>
           </motion.div>
         )}

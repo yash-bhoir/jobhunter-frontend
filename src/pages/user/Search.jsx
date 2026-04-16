@@ -5,7 +5,7 @@ import {
   Search as SearchIcon, MapPin, Briefcase, User,
   ChevronDown, ChevronUp, Loader2, Zap, Mail, CheckCircle,
   Clock, RefreshCw, Sparkles, History, ChevronRight,
-  Wand2, ArrowRight, X, Target
+  Wand2, ArrowRight, X, Target, Navigation
 } from 'lucide-react';
 import { useAuth }     from '@hooks/useAuth';
 import { useSocket }   from '@hooks/useSocket';
@@ -61,7 +61,89 @@ export default function Search() {
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [showSugg,       setShowSugg]       = useState(false);
 
+  const [radius,          setRadius]          = useState(0);           // 0 = Any
+  const [locSuggestions,  setLocSuggestions]  = useState([]);
+  const [locLoading,      setLocLoading]      = useState(false);
+  const [showLocDrop,     setShowLocDrop]     = useState(false);
+  const [geoLoading,      setGeoLoading]      = useState(false);
+  const locDebounce   = useRef(null);
+  const locInputRef   = useRef(null);
+  const locDropRef    = useRef(null);
   const cacheDebounce = useRef(null);
+
+  const RADIUS_OPTIONS = [
+    { label: 'Any', value: 0 },
+    { label: '10 km', value: 10 },
+    { label: '25 km', value: 25 },
+    { label: '50 km', value: 50 },
+    { label: '100 km', value: 100 },
+  ];
+
+  // Close location dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (locDropRef.current && !locDropRef.current.contains(e.target) &&
+          locInputRef.current && !locInputRef.current.contains(e.target)) {
+        setShowLocDrop(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Location autocomplete via OpenStreetMap Nominatim (free, no key needed)
+  const fetchLocSuggestions = (query) => {
+    clearTimeout(locDebounce.current);
+    if (!query.trim() || query.length < 2) { setLocSuggestions([]); setShowLocDrop(false); return; }
+    locDebounce.current = setTimeout(async () => {
+      setLocLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6&featuretype=city`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
+        const data = await res.json();
+        const formatted = data.map(r => {
+          const a = r.address || {};
+          const city    = a.city || a.town || a.village || a.county || r.name;
+          const state   = a.state || '';
+          const country = a.country || '';
+          const label   = [city, state, country].filter(Boolean).join(', ');
+          return { label, city, lat: r.lat, lon: r.lon };
+        }).filter((v, i, arr) => arr.findIndex(x => x.label === v.label) === i); // dedupe
+        setLocSuggestions(formatted);
+        setShowLocDrop(formatted.length > 0);
+      } catch { setLocSuggestions([]); }
+      finally { setLocLoading(false); }
+    }, 300);
+  };
+
+  const pickLocation = (item) => {
+    setLocation(item.label);
+    setLocSuggestions([]);
+    setShowLocDrop(false);
+  };
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, { headers: { 'Accept-Language': 'en' } });
+          const data = await res.json();
+          const a    = data.address || {};
+          const city = a.city || a.town || a.village || a.county || data.name || 'Your location';
+          const loc  = [city, a.state, a.country].filter(Boolean).join(', ');
+          setLocation(loc);
+          toast.success(`Location set to ${city}`);
+        } catch { toast.error('Could not resolve location'); }
+        finally { setGeoLoading(false); }
+      },
+      () => { toast.error('Location access denied'); setGeoLoading(false); }
+    );
+  };
 
   useEffect(() => {
     if (!role.trim()) { setCacheInfo(null); return; }
@@ -125,7 +207,7 @@ export default function Search() {
     setLoading(true); setDone(false); setProgress({}); setEmailProgress(null); setResults(null); setCacheInfo(null);
     dispatch(startSearch(null));
     try {
-      const { data } = await api.post('/search/run', { role: role.trim(), location: location.trim() || 'India', workType, platforms, force });
+      const { data } = await api.post('/search/run', { role: role.trim(), location: location.trim() || 'India', workType, platforms, force, ...(radius > 0 && { radius }) });
       setResults(data.data);
       dispatch(setJobs(data.data.jobs || []));
       dispatch(completeSearch()); setDone(true);
@@ -192,17 +274,96 @@ export default function Search() {
                 )}
               </div>
 
-              {/* Location */}
-              <div className="relative">
-                <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={location}
-                  onChange={e => setLocation(e.target.value)}
-                  placeholder="Location — e.g. Mumbai, Remote"
-                  className="input pl-10 py-3 rounded-xl text-sm"
-                />
+              {/* Location with autocomplete */}
+              <div className="relative" ref={locDropRef}>
+                <div className="relative flex items-center">
+                  <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    ref={locInputRef}
+                    type="text"
+                    value={location}
+                    onChange={e => { setLocation(e.target.value); fetchLocSuggestions(e.target.value); }}
+                    onFocus={() => { if (locSuggestions.length > 0) setShowLocDrop(true); }}
+                    onKeyDown={e => { if (e.key === 'Escape') setShowLocDrop(false); }}
+                    placeholder="Location — e.g. Mumbai, Remote"
+                    className="input pl-10 pr-10 py-3 rounded-xl text-sm w-full"
+                    autoComplete="off"
+                  />
+                  {/* GPS / spinner */}
+                  <button
+                    type="button"
+                    onClick={useMyLocation}
+                    disabled={geoLoading}
+                    title="Use my location"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500 transition-colors"
+                  >
+                    {geoLoading
+                      ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      : locLoading
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Navigation className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {/* Suggestions dropdown */}
+                <AnimatePresence>
+                  {showLocDrop && locSuggestions.length > 0 && (
+                    <motion.ul
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+                    >
+                      {locSuggestions.map((s, i) => (
+                        <li key={i}>
+                          <button
+                            type="button"
+                            onMouseDown={() => pickLocation(s)}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-blue-50 transition-colors group"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-500 flex-shrink-0 transition-colors" />
+                            <span className="text-sm text-gray-700 truncate">{s.label}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
               </div>
+
+              {/* Radius picker — shown for on-site or hybrid */}
+              <AnimatePresence>
+                {(workType === 'onsite' || workType === 'hybrid') && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-400 flex-shrink-0">Within</span>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {RADIUS_OPTIONS.map(({ label, value }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setRadius(value)}
+                            className={cn(
+                              'px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all duration-150',
+                              radius === value
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Work type pills */}
               <div className="flex gap-2">
@@ -479,7 +640,7 @@ export default function Search() {
                       <p className="text-xs text-gray-500">{results.fromCache ? '10 credits saved 🎉' : `${Math.round((results.durationMs || 0) / 1000)}s total`}</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 mb-3">
                     {[
                       { label: 'Jobs',      value: doneJobs },
                       { label: 'HR Emails', value: doneEmails },

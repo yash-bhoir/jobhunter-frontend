@@ -142,7 +142,7 @@ export default function AdminPlans() {
       {/* Monthly credits per plan */}
       <div className="card card-body space-y-4">
         <h2 className="font-semibold text-gray-900">Monthly Credits per Plan</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { key: 'free',  label: 'Free Plan',  color: 'gray'   },
             { key: 'pro',   label: 'Pro Plan',   color: 'blue'   },

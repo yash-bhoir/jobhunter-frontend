@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Briefcase, MapPin, ExternalLink, Bookmark, BookmarkCheck,
+  MapPin, Bookmark, BookmarkCheck,
   Search, Download, Building, Wifi, Star, Mail, Send,
   Loader2, ChevronLeft, ChevronRight, Users, Clock,
-  RefreshCw, CheckCircle2, X, Filter, SlidersHorizontal,
-  Sparkles, Target, TrendingUp, ArrowUpRight
+  RefreshCw, X, SlidersHorizontal, Copy, Check,
+  Linkedin, ShieldCheck, AlertCircle, HelpCircle,
+  Sparkles, ArrowUpRight
 } from 'lucide-react';
 import { api }  from '@utils/axios';
 import { cn }   from '@utils/helpers';
@@ -109,7 +110,13 @@ export default function Results() {
       setHrLookup(p => ({ ...p, [jobId]: { loading: false, result } }));
       const top = result.emails?.[0];
       if (top?.email) {
-        const patch = { recruiterEmail: top.email, recruiterName: top.name || null, recruiterConfidence: top.confidence || null };
+        const patch = {
+          recruiterEmail:       top.email,
+          recruiterName:        top.name       || null,
+          recruiterConfidence:  top.confidence || null,
+          recruiterEmailStatus: top.status     || 'unknown',
+          allRecruiterContacts: result.emails  || [],
+        };
         setJobs(prev => prev.map(j => j._id === jobId ? { ...j, ...patch } : j));
         setSelected(prev => prev?._id === jobId ? { ...prev, ...patch } : prev);
       }
@@ -118,6 +125,45 @@ export default function Results() {
       setHrLookup(p => ({ ...p, [jobId]: { loading: false, error: msg } }));
       toast.error(msg);
     }
+  };
+
+  const findEmployees = async (job) => {
+    const jobId = job._id;
+    setHrLookup(p => ({ ...p, [`emp_${jobId}`]: { loading: true } }));
+    try {
+      const { data } = await api.post(`/jobs/${jobId}/find-employees`);
+      const employees = data.data.employees || [];
+      const patch = { employees };
+      setJobs(prev => prev.map(j => j._id === jobId ? { ...j, ...patch } : j));
+      setSelected(prev => prev?._id === jobId ? { ...prev, ...patch } : prev);
+      setHrLookup(p => ({ ...p, [`emp_${jobId}`]: { loading: false } }));
+      toast.success(employees.length > 0
+        ? `Found ${employees.length} employee contacts`
+        : 'No employees found via Apollo for this company');
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Employee search failed';
+      setHrLookup(p => ({ ...p, [`emp_${jobId}`]: { loading: false, error: msg } }));
+      toast.error(msg);
+    }
+  };
+
+  // Fetch fresh contacts (employees + HR) from DB when a job is selected
+  const fetchContacts = async (jobId) => {
+    try {
+      const { data } = await api.get(`/jobs/${jobId}/contacts`);
+      const { hrContacts, employees } = data.data;
+      const patch = {};
+      if (employees?.length > 0) patch.employees = employees;
+      if (hrContacts?.length > 0) {
+        patch.allRecruiterContacts = hrContacts;
+        patch.recruiterEmail = hrContacts[0]?.email || undefined;
+        patch.recruiterName  = hrContacts[0]?.name  || undefined;
+      }
+      if (Object.keys(patch).length > 0) {
+        setJobs(prev => prev.map(j => j._id === jobId ? { ...j, ...patch } : j));
+        setSelected(prev => prev?._id === jobId ? { ...prev, ...patch } : prev);
+      }
+    } catch { /* silent — contacts are optional */ }
   };
 
   const exportExcel = async () => {
@@ -153,7 +199,7 @@ export default function Results() {
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
 
   return (
-    <div className="flex gap-5 h-full max-w-7xl mx-auto">
+    <div className="flex gap-5 h-full max-w-7xl mx-auto relative">
 
       {/* ── Left — job list ───────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
@@ -253,7 +299,7 @@ export default function Results() {
                     className="input pl-10"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <select value={filter.status} onChange={e => setFilter(p => ({ ...p, status: e.target.value }))} className="input text-sm">
                     <option value="">All Status</option>
                     {STATUSES.map(s => <option key={s} value={s}>{JOB_STATUS_LABELS[s]}</option>)}
@@ -307,7 +353,7 @@ export default function Results() {
               <motion.div
                 key={job._id}
                 variants={cardVariant}
-                onClick={() => { setSelected(job); setActiveTab('details'); }}
+                onClick={() => { setSelected(job); setActiveTab('details'); fetchContacts(job._id); }}
                 className={cn(
                   'group bg-white rounded-2xl border-2 p-4 cursor-pointer transition-all duration-200',
                   'hover:shadow-md hover:-translate-y-0.5',
@@ -386,18 +432,37 @@ export default function Results() {
       </div>
 
       {/* ── Right — job detail panel ──────────────────────────────── */}
+      {/* Mobile overlay */}
       <AnimatePresence>
         {selected && (
           <motion.div
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="w-[380px] flex-shrink-0 hidden lg:block"
+            key="overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+            onClick={() => setSelected(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selected && (
+          <motion.div
+            initial={{ opacity: 0, y: '100%' }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: '100%' }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="fixed bottom-0 inset-x-0 z-50 lg:relative lg:z-auto lg:bottom-auto lg:inset-x-auto lg:w-[380px] lg:flex-shrink-0"
           >
-            <div className="bg-white rounded-3xl border border-gray-100 sticky top-4 overflow-hidden"
-              style={{ maxHeight: 'calc(100vh - 5rem)', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px -4px rgba(0,0,0,0.1)' }}
+            {/* Desktop: re-enter from right */}
+            <div className="bg-white rounded-t-3xl lg:rounded-3xl border border-gray-100 lg:sticky lg:top-4 overflow-hidden"
+              style={{ maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px -4px rgba(0,0,0,0.1)' }}
             >
+            {/* Mobile drag handle */}
+            <div className="flex justify-center pt-3 pb-1 lg:hidden flex-shrink-0">
+              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+            </div>
               {/* Header */}
               <div className="p-5 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-start justify-between gap-3">
@@ -432,7 +497,7 @@ export default function Results() {
 
               {/* Tabs */}
               <div className="flex border-b border-gray-100 flex-shrink-0 px-1">
-                {['details', 'hr', 'status', 'ai'].map(tab => (
+                {['details', 'contacts', 'status', 'ai'].map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -443,7 +508,9 @@ export default function Results() {
                         : 'border-transparent text-gray-400 hover:text-gray-600'
                     )}
                   >
-                    {tab === 'hr' ? 'HR Email' : tab === 'ai' ? 'AI Tools' : tab}
+                    {tab === 'contacts'
+                      ? `Contacts${(selected.allRecruiterContacts?.length || (selected.recruiterEmail ? 1 : 0)) > 0 ? ` (${selected.allRecruiterContacts?.length || 1})` : ''}`
+                      : tab === 'ai' ? 'AI Tools' : tab}
                   </button>
                 ))}
               </div>
@@ -477,61 +544,140 @@ export default function Results() {
                     >
                       <ArrowUpRight className="w-4 h-4" /> Apply Now
                     </a>
+                    <button
+                      onClick={() => {
+                        const allEmails = [
+                          ...(selected.allRecruiterContacts?.length > 0
+                            ? selected.allRecruiterContacts
+                            : selected.recruiterEmail
+                              ? [{ email: selected.recruiterEmail }]
+                              : []),
+                          ...(selected.employees?.filter(e => e.email) || []),
+                        ].map(c => c.email).filter(Boolean);
+                        const params = new URLSearchParams({
+                          company:  selected.company,
+                          jobTitle: selected.title,
+                          ...(allEmails.length ? { to: allEmails.join(',') } : {}),
+                          ...(selected.searchId ? { searchId: selected.searchId } : {}),
+                        });
+                        window.location.href = `/outreach-manager?${params}`;
+                      }}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                      style={{ background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)' }}
+                    >
+                      <Send className="w-4 h-4" /> Send Outreach
+                    </button>
                   </motion.div>
                 )}
 
-                {activeTab === 'hr' && (
+                {activeTab === 'contacts' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                    {selected.recruiterEmail ? (
-                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                        <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> HR Contact Found
-                        </p>
-                        <p className="font-bold text-gray-900">{selected.recruiterName || 'HR Contact'}</p>
-                        <p className="text-sm text-gray-600 mt-0.5">{selected.recruiterEmail}</p>
-                        {selected.recruiterConfidence && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="h-1.5 flex-1 bg-emerald-200 rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${selected.recruiterConfidence}%` }} />
-                            </div>
-                            <span className="text-xs text-emerald-600 font-semibold">{selected.recruiterConfidence}% confidence</span>
-                          </div>
-                        )}
-                        <a
-                          href={`mailto:${selected.recruiterEmail}`}
-                          className="btn btn-success btn-sm mt-3 w-full justify-center"
-                        >
-                          <Mail className="w-3.5 h-3.5" /> Email HR
-                        </a>
-                      </div>
-                    ) : (
-                      <div className="text-center py-4">
-                        <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
-                          <Users className="w-6 h-6 text-gray-300" />
-                        </div>
-                        <p className="text-sm font-semibold text-gray-700 mb-1">No HR email yet</p>
-                        <p className="text-xs text-gray-400 mb-4">Find the hiring manager's contact</p>
-                        {isPro ? (
+
+                    {/* ── HR Emails ───────────────────────────── */}
+                    <ContactsSection
+                      title="HR Emails"
+                      icon={Mail}
+                      iconColor="text-blue-500"
+                      items={
+                        selected.allRecruiterContacts?.length > 0
+                          ? selected.allRecruiterContacts
+                          : selected.recruiterEmail
+                            ? [{ email: selected.recruiterEmail, name: selected.recruiterName, confidence: selected.recruiterConfidence, source: selected.recruiterSource, status: selected.recruiterEmailStatus || 'unknown', linkedin: selected.recruiterLinkedIn }]
+                            : []
+                      }
+                      emptyText="No HR emails found yet"
+                      onOutreach={(contacts) => {
+                        const params = new URLSearchParams({
+                          company:  selected.company,
+                          jobTitle: selected.title,
+                          to:       contacts.map(c => c.email).join(','),
+                          ...(selected.searchId ? { searchId: selected.searchId } : {}),
+                        });
+                        window.location.href = `/outreach-manager?${params}`;
+                      }}
+                    />
+
+                    {/* ── Employees ───────────────────────────── */}
+                    <ContactsSection
+                      title="Employees"
+                      icon={Users}
+                      iconColor="text-violet-500"
+                      items={(selected.employees || []).map(e => ({
+                        email:      e.email,
+                        name:       e.name,
+                        title:      e.title,
+                        linkedin:   e.linkedin,
+                        source:     e.source || 'apollo',
+                        status:     e.email ? 'verified' : 'unknown',
+                        confidence: e.email ? 85 : 0,
+                      }))}
+                      emptyText="No employees found yet"
+                      onOutreach={(contacts) => {
+                        const params = new URLSearchParams({
+                          company:  selected.company,
+                          jobTitle: selected.title,
+                          to:       contacts.filter(c => c.email).map(c => c.email).join(','),
+                          ...(selected.searchId ? { searchId: selected.searchId } : {}),
+                        });
+                        window.location.href = `/outreach-manager?${params}`;
+                      }}
+                    />
+
+                    {/* ── Action buttons ───────────────────────── */}
+                    <div className="space-y-2 pt-1">
+                      {isPro ? (
+                        <>
                           <button
                             onClick={() => findHRContact(selected)}
                             disabled={hrLookup[selected._id]?.loading}
-                            className="btn btn-primary btn-sm w-full justify-center"
+                            className="btn btn-secondary btn-sm w-full justify-center"
                           >
                             {hrLookup[selected._id]?.loading
-                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Looking up...</>
-                              : <><Search className="w-3.5 h-3.5" /> Find HR Contact</>}
+                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Looking up HR…</>
+                              : <><Search className="w-3.5 h-3.5" /> Find HR Emails</>}
+                            <span className="ml-auto text-[10px] bg-gray-200 text-gray-600 font-semibold px-1.5 py-0.5 rounded-full">15 cr</span>
                           </button>
-                        ) : (
-                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-                            Upgrade to Pro to manually lookup HR emails
-                            <Link to="/billing" className="block font-semibold mt-1 hover:underline">Upgrade Now →</Link>
-                          </div>
-                        )}
-                        {hrLookup[selected._id]?.error && (
-                          <p className="text-xs text-red-500 mt-2">{hrLookup[selected._id].error}</p>
-                        )}
-                      </div>
-                    )}
+                          <button
+                            onClick={() => findEmployees(selected)}
+                            disabled={hrLookup[`emp_${selected._id}`]?.loading}
+                            className="btn btn-secondary btn-sm w-full justify-center"
+                          >
+                            {hrLookup[`emp_${selected._id}`]?.loading
+                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Finding employees…</>
+                              : <><Users className="w-3.5 h-3.5" /> Find Employees</>}
+                            <span className="ml-auto text-[10px] bg-gray-200 text-gray-600 font-semibold px-1.5 py-0.5 rounded-full">10 cr</span>
+                          </button>
+                        </>
+                      ) : (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                          Upgrade to Pro to find HR emails &amp; employees
+                          <Link to="/billing" className="block font-semibold mt-1 text-amber-800 hover:underline">Upgrade Now →</Link>
+                        </div>
+                      )}
+
+                      {/* Send to all contacts */}
+                      {(selected.recruiterEmail || selected.allRecruiterContacts?.length > 0) && (
+                        <button
+                          onClick={() => {
+                            const allEmails = [
+                              ...(selected.allRecruiterContacts?.length > 0 ? selected.allRecruiterContacts : selected.recruiterEmail ? [{ email: selected.recruiterEmail }] : []),
+                              ...(selected.employees?.filter(e => e.email) || []),
+                            ].map(c => c.email).filter(Boolean);
+                            const params = new URLSearchParams({
+                              company:  selected.company,
+                              jobTitle: selected.title,
+                              to:       allEmails.join(','),
+                              ...(selected.searchId ? { searchId: selected.searchId } : {}),
+                            });
+                            window.location.href = `/outreach-manager?${params}`;
+                          }}
+                          className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                          style={{ background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)' }}
+                        >
+                          <Send className="w-4 h-4" /> Send Outreach to All Contacts
+                        </button>
+                      )}
+                    </div>
                   </motion.div>
                 )}
 
@@ -570,6 +716,112 @@ export default function Results() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Email status badge ────────────────────────────────────────────
+function StatusBadge({ status }) {
+  if (status === 'verified') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+      <ShieldCheck className="w-3 h-3" /> Verified
+    </span>
+  );
+  if (status === 'predicted') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+      <HelpCircle className="w-3 h-3" /> Predicted
+    </span>
+  );
+  if (status === 'invalid') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+      <AlertCircle className="w-3 h-3" /> Invalid
+    </span>
+  );
+  return null;
+}
+
+// ── Contacts section (HR emails or Employees) ─────────────────────
+function ContactsSection({ title, icon: Icon, iconColor, items, emptyText, onOutreach }) {
+  const [copied, setCopied] = useState('');
+
+  const copy = async (email) => {
+    await navigator.clipboard.writeText(email);
+    setCopied(email);
+    setTimeout(() => setCopied(''), 2000);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+          <Icon className={`w-3.5 h-3.5 ${iconColor}`} />
+          {title} {items.length > 0 && <span className="text-gray-400 font-normal">({items.length})</span>}
+        </p>
+        {items.length > 0 && onOutreach && (
+          <button
+            onClick={() => onOutreach(items.filter(i => i.email))}
+            className="text-[10px] text-blue-600 font-semibold hover:underline flex items-center gap-0.5"
+          >
+            Outreach all <Send className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-xs text-gray-400 italic py-2">{emptyText}</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, i) => (
+            <div key={i} className="flex items-start gap-2.5 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-700 font-bold text-xs flex-shrink-0">
+                {item.name?.[0]?.toUpperCase() || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{item.name || 'Contact'}</p>
+                {item.title && <p className="text-xs text-gray-400 truncate">{item.title}</p>}
+                {item.email ? (
+                  <p className="text-xs text-blue-600 font-mono truncate mt-0.5">{item.email}</p>
+                ) : (
+                  <p className="text-xs text-gray-300 italic">No email</p>
+                )}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <StatusBadge status={item.status} />
+                  {item.confidence > 0 && (
+                    <span className="text-[10px] text-gray-400">{item.confidence}%</span>
+                  )}
+                  {item.source && (
+                    <span className="text-[10px] text-gray-400 capitalize">{item.source}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 flex-shrink-0">
+                {item.email && (
+                  <button
+                    onClick={() => copy(item.email)}
+                    className="p-1.5 rounded-lg bg-white border border-gray-200 hover:border-blue-300 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Copy email"
+                  >
+                    {copied === item.email
+                      ? <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                {item.linkedin && (
+                  <a
+                    href={item.linkedin}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-white border border-gray-200 hover:border-blue-300 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="LinkedIn"
+                  >
+                    <Linkedin className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

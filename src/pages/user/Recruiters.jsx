@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, Search, Mail, ExternalLink, Loader2,
   Copy, CheckCheck, Building, Linkedin, Clock,
-  ChevronRight, RefreshCw, History, Trash2, Sparkles
+  ChevronRight, RefreshCw, History, Trash2, Sparkles, X
 } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useToast } from '@hooks/useToast';
@@ -39,6 +39,7 @@ export default function Recruiters() {
   const [histTotal,   setHistTotal]   = useState(0);
   const [histSearch,  setHistSearch]  = useState('');
   const [selected,    setSelected]    = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const HIST_LIMIT = 15;
 
@@ -126,12 +127,27 @@ export default function Recruiters() {
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="flex gap-5">
 
+      {/* Mobile history overlay */}
+      {historyOpen && (
+        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setHistoryOpen(false)} />
+      )}
+
       {/* ── LEFT ─────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
 
-        <motion.div variants={fadeUp}>
-          <h1 className="text-xl font-bold text-gray-900">HR Contact Finder</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Find verified HR emails at any company</p>
+        <motion.div variants={fadeUp} className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">HR Contact Finder</h1>
+            <p className="text-sm text-gray-400 mt-0.5">Find verified HR emails at any company</p>
+          </div>
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors flex-shrink-0"
+          >
+            <History className="w-4 h-4 text-gray-400" />
+            History
+            {histTotal > 0 && <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-1.5 py-0.5 rounded-full">{histTotal}</span>}
+          </button>
         </motion.div>
 
         {/* Lookup card */}
@@ -331,9 +347,15 @@ export default function Recruiters() {
       </div>
 
       {/* ── RIGHT: history ────────────────────────────────────── */}
-      <div className="w-72 flex-shrink-0">
+      <div className={cn(
+        'w-72 flex-shrink-0',
+        // Mobile: fixed drawer from right; Desktop: static column
+        'fixed lg:static inset-y-0 right-0 z-50 lg:z-auto',
+        'transition-transform duration-300 ease-in-out',
+        historyOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+      )}>
         <div
-          className="bg-white rounded-2xl border border-gray-100 sticky top-0 flex flex-col overflow-hidden"
+          className="bg-white rounded-none lg:rounded-2xl border-l lg:border border-gray-100 h-full lg:h-auto lg:sticky lg:top-0 flex flex-col overflow-hidden w-72"
           style={{ maxHeight: 'calc(100vh - 5rem)', boxShadow: '0 4px 24px -4px rgba(0,0,0,0.08)' }}
         >
           {/* Header */}
@@ -345,9 +367,14 @@ export default function Recruiters() {
                 <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">{histTotal}</span>
               )}
             </div>
-            <button onClick={() => fetchHistory(1)} disabled={histLoading} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
-              <RefreshCw className={cn('w-3.5 h-3.5', histLoading && 'animate-spin')} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button onClick={() => fetchHistory(1)} disabled={histLoading} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                <RefreshCw className={cn('w-3.5 h-3.5', histLoading && 'animate-spin')} />
+              </button>
+              <button onClick={() => setHistoryOpen(false)} className="lg:hidden p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Search */}

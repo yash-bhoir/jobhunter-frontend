@@ -201,7 +201,7 @@ export default function LinkedIn() {
           <p className="font-semibold text-blue-800 text-sm">Auto-Fetch Settings</p>
           <span className="text-xs text-blue-400">(pre-filled from profile)</span>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="label text-blue-700 text-xs">Role</label>
             <input value={fetchConfig.role} onChange={e => setFetchConfig(p => ({ ...p, role: e.target.value }))} placeholder="React Developer" className="input bg-white text-sm" />
@@ -663,7 +663,7 @@ function GmailAlertSection({ onFetched }) {
       )}
 
       {!status?.connected && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
           {['Connect your Gmail', 'We read LinkedIn alert emails only', 'Jobs + HR emails auto-imported'].map((s, i) => (
             <div key={i} className="flex items-start gap-1.5 text-xs text-gray-500">
               <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
