@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   Search, Briefcase, Mail, Users, TrendingUp,
   ArrowRight, Star, Target, Plus, ChevronRight, Sparkles,
-  Zap, MapPin, Building,
+  Zap, MapPin, Building, Bell, Check, Clock,
 } from 'lucide-react';
 import { useAuth }    from '@hooks/useAuth';
 import { useCredits } from '@hooks/useCredits';
@@ -43,17 +43,41 @@ const item = {
 export default function Dashboard() {
   const { user }                = useAuth();
   const { remaining, usagePct } = useCredits();
-  const [stats,  setStats]  = useState(null);
-  const [jobs,   setJobs]   = useState([]);
-  const [loading,setLoad]   = useState(true);
+  const [stats,     setStats]     = useState(null);
+  const [jobs,      setJobs]      = useState([]);
+  const [loading,   setLoad]      = useState(true);
+  const [followUps, setFollowUps] = useState([]);
+  const [fuMarking, setFuMarking] = useState({});
 
   useEffect(() => {
     Promise.all([
       api.get('/user/stats').catch(() => ({ data: { data: null } })),
       api.get('/jobs?limit=5&sort=matchScore').catch(() => ({ data: { data: [] } })),
-    ]).then(([s, j]) => { setStats(s.data.data); setJobs(j.data.data || []); })
-      .finally(() => setLoad(false));
+      api.get('/jobs/follow-ups').catch(() => ({ data: { data: [] } })),
+    ]).then(([s, j, fu]) => {
+      setStats(s.data.data);
+      setJobs(j.data.data || []);
+      setFollowUps(fu.data.data || []);
+    }).finally(() => setLoad(false));
   }, []);
+
+  const markFollowUpSent = async (jobId) => {
+    setFuMarking(p => ({ ...p, [jobId]: 'sent' }));
+    try {
+      await api.post(`/jobs/${jobId}/follow-up/sent`);
+      setFollowUps(prev => prev.filter(j => j._id !== jobId));
+    } catch { /* silent */ }
+    finally { setFuMarking(p => ({ ...p, [jobId]: null })); }
+  };
+
+  const snoozeFollowUp = async (jobId) => {
+    setFuMarking(p => ({ ...p, [jobId]: 'snooze' }));
+    try {
+      await api.post(`/jobs/${jobId}/follow-up/snooze`, { days: 3 });
+      setFollowUps(prev => prev.filter(j => j._id !== jobId));
+    } catch { /* silent */ }
+    finally { setFuMarking(p => ({ ...p, [jobId]: null })); }
+  };
 
   const firstName   = user?.profile?.firstName || 'there';
   const creditColor = usagePct >= 80 ? '#ef4444' : usagePct >= 50 ? '#f59e0b' : '#10b981';
@@ -301,6 +325,77 @@ export default function Dashboard() {
           </motion.div>
         </div>
       </div>
+
+      {/* ── Follow-ups Due ────────────────────────────────────────── */}
+      {(loading || followUps.length > 0) && (
+        <motion.div variants={item} className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
+          style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}
+        >
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-violet-500" />
+              <h2 className="font-bold text-gray-900">Follow-ups Due</h2>
+              {followUps.length > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">{followUps.length}</span>
+              )}
+            </div>
+            <Link to="/results" className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors">
+              View all <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="divide-y divide-gray-100">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-4">
+                  <div className="skeleton w-10 h-10 rounded-xl flex-shrink-0" />
+                  <div className="flex-1 space-y-2"><div className="skeleton h-3.5 w-3/4 rounded-lg" /><div className="skeleton h-3 w-1/2 rounded-lg" /></div>
+                  <div className="skeleton h-8 w-20 rounded-xl" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {followUps.slice(0, 5).map(job => (
+                <div key={job._id} className="flex items-center gap-3 px-4 py-3.5">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0"
+                    style={{ background: `hsl(${(job.company?.charCodeAt(0) || 65) * 5 % 360}, 65%, 55%)` }}
+                  >
+                    {job.company?.[0]?.toUpperCase() || '?'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 text-sm truncate">{job.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
+                      <Building className="w-3 h-3" /> {job.company}
+                      {job.urgency === 'overdue' && (
+                        <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full ml-1">Overdue</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => markFollowUpSent(job._id)}
+                      disabled={!!fuMarking[job._id]}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200"
+                      title="Mark as sent"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Sent
+                    </button>
+                    <button
+                      onClick={() => snoozeFollowUp(job._id)}
+                      disabled={!!fuMarking[job._id]}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                      title="Snooze 3 days"
+                    >
+                      <Clock className="w-3.5 h-3.5" /> +3d
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      )}
     </motion.div>
   );
 }

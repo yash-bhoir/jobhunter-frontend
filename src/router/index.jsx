@@ -22,6 +22,7 @@ import Profile        from '@pages/user/Profile';
 import Credits        from '@pages/user/Credits';
 import Billing        from '@pages/user/Billing';
 import LinkedIn       from '@pages/user/LinkedIn';
+import Insights       from '@pages/user/Insights';
 
 // Admin pages
 import AdminOverview  from '@pages/admin/Overview';
@@ -68,6 +69,7 @@ export default function AppRouter() {
         <Route path="/credits"          element={<Credits />} />
         <Route path="/billing"          element={<Billing />} />
         <Route path="/linkedin"         element={<LinkedIn />} />
+        <Route path="/insights"         element={<Insights />} />
       </Route>
 
       {/* Admin routes */}

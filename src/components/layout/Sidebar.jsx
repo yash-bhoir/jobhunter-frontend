@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Search, Briefcase, Users, Mail,
   User, CreditCard, Wallet, LogOut, X, Linkedin,
-  ChevronRight, Sparkles,
+  ChevronRight, Sparkles, BarChart2,
 } from 'lucide-react';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/recruiters', label: 'Recruiters',   icon: Users,           color: 'cyan'   },
   { to: '/outreach',   label: 'Outreach',     icon: Mail,            color: 'emerald'},
   { to: '/linkedin',   label: 'LinkedIn',     icon: Linkedin,        color: 'blue'   },
+  { to: '/insights',   label: 'Insights',     icon: BarChart2,       color: 'violet' },
 ];
 
 const BOTTOM_ITEMS = [

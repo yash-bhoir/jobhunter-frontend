@@ -7,7 +7,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, Users, Clock,
   RefreshCw, X, SlidersHorizontal, Copy, Check,
   Linkedin, ShieldCheck, AlertCircle, HelpCircle,
-  Sparkles, ArrowUpRight
+  Sparkles, ArrowUpRight, Lock, Zap
 } from 'lucide-react';
 import { api }  from '@utils/axios';
 import { cn }   from '@utils/helpers';
@@ -28,6 +28,33 @@ const SCORE_STYLE = (s) =>
   s >= 75 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
   s >= 50 ? 'bg-amber-50 text-amber-700 border border-amber-200' :
             'bg-gray-100 text-gray-500';
+
+const FREE_JOB_LIMIT = 10;
+
+// Locked job card shown to free users beyond their limit
+const LockedJobCard = ({ job }) => (
+  <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50/60 p-4 select-none">
+    {/* Blurred content */}
+    <div className="blur-sm pointer-events-none opacity-60">
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gray-300 text-white font-black text-base" />
+        <div className="flex-1 space-y-2">
+          <div className="h-4 bg-gray-200 rounded-lg w-3/5" />
+          <div className="h-3 bg-gray-200 rounded-lg w-2/5" />
+          <div className="h-3 bg-gray-200 rounded-lg w-1/3" />
+        </div>
+        <div className="w-12 h-6 bg-gray-200 rounded-full" />
+      </div>
+    </div>
+    {/* Lock overlay */}
+    <div className="absolute inset-0 flex items-center justify-center">
+      <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-xl px-3 py-2 shadow-sm">
+        <Lock className="w-3.5 h-3.5 text-gray-500" />
+        <span className="text-xs font-semibold text-gray-600">Pro only</span>
+      </div>
+    </div>
+  </div>
+);
 
 const listVariants = {
   hidden: {},
@@ -58,11 +85,55 @@ export default function Results() {
   const [hrLookup,    setHrLookup]    = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab,   setActiveTab]   = useState('details');
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [prepLoading, setPrepLoading] = useState(false);
+  const [livenessLoading, setLivenessLoading] = useState({});
 
   useEffect(() => {
     if (!searchId) return;
     api.get(`/search/${searchId}`).then(({ data }) => setSearchMeta(data.data)).catch(() => {});
   }, [searchId]);
+
+  const checkLiveness = async (job) => {
+    const jobId = job._id;
+    setLivenessLoading(p => ({ ...p, [jobId]: true }));
+    try {
+      const { data } = await api.post(`/jobs/${jobId}/check-liveness`);
+      const liveness = data.data?.liveness;
+      setJobs(prev => prev.map(j => j._id === jobId ? { ...j, liveness } : j));
+      setSelected(prev => prev?._id === jobId ? { ...prev, liveness } : prev);
+      toast.success(liveness === 'active' ? 'Job is still active!' : liveness === 'expired' ? 'Job may be closed' : 'Status unclear');
+    } catch { toast.error('Liveness check failed'); }
+    finally { setLivenessLoading(p => ({ ...p, [jobId]: false })); }
+  };
+
+  const runDeepEval = async (job) => {
+    setEvalLoading(true);
+    try {
+      const { data } = await api.post(`/jobs/${job._id}/deep-evaluate`);
+      const deepEval = data.data;
+      setJobs(prev => prev.map(j => j._id === job._id ? { ...j, deepEval } : j));
+      setSelected(prev => prev?._id === job._id ? { ...prev, deepEval } : prev);
+      toast.success('Deep evaluation complete');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Evaluation failed');
+    }
+    finally { setEvalLoading(false); }
+  };
+
+  const runInterviewPrep = async (job) => {
+    setPrepLoading(true);
+    try {
+      const { data } = await api.post(`/jobs/${job._id}/interview-prep`);
+      const interviewPrep = data.data;
+      setJobs(prev => prev.map(j => j._id === job._id ? { ...j, interviewPrep } : j));
+      setSelected(prev => prev?._id === job._id ? { ...prev, interviewPrep } : prev);
+      toast.success('Interview prep generated');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Prep generation failed');
+    }
+    finally { setPrepLoading(false); }
+  };
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -349,7 +420,12 @@ export default function Results() {
             animate="show"
             className="space-y-2.5"
           >
-            {filtered.map(job => (
+            {filtered.map((job, idx) => {
+              // Free plan: show first 10 normally, lock the rest
+              const isLocked = !isPro && idx >= FREE_JOB_LIMIT;
+              if (isLocked) return <motion.div key={job._id} variants={cardVariant}><LockedJobCard job={job} /></motion.div>;
+
+              return (
               <motion.div
                 key={job._id}
                 variants={cardVariant}
@@ -405,6 +481,17 @@ export default function Results() {
                       {job.remote && <span className="badge badge-green text-xs"><Wifi className="w-3 h-3" /> Remote</span>}
                       {job.recruiterEmail && <span className="badge badge-blue text-xs"><Mail className="w-3 h-3" /> HR Email</span>}
                       <span className={cn('badge text-xs', JOB_STATUS_STYLES[job.status])}>{JOB_STATUS_LABELS[job.status]}</span>
+                      {/* Liveness badge */}
+                      {job.liveness === 'expired' && (
+                        <span className="badge text-xs bg-red-100 text-red-600 border border-red-200">Possibly Closed</span>
+                      )}
+                      {job.liveness === 'uncertain' && (
+                        <span className="badge text-xs bg-amber-100 text-amber-600 border border-amber-200">Unverified</span>
+                      )}
+                      {/* Follow-up badge */}
+                      {job.followUpDate && new Date(job.followUpDate) <= new Date() && (
+                        <span className="badge text-xs bg-violet-100 text-violet-700 border border-violet-200">Follow Up Due</span>
+                      )}
                       {job.salary && job.salary !== 'Not specified' && (
                         <span className="text-xs text-gray-400 font-medium">{job.salary}</span>
                       )}
@@ -413,7 +500,32 @@ export default function Results() {
                   </div>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
+
+            {/* Free plan paywall banner */}
+            {!isPro && filtered.length > FREE_JOB_LIMIT && (
+              <motion.div
+                variants={cardVariant}
+                className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-violet-50 p-6 text-center"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center mx-auto mb-3 shadow-lg">
+                  <Zap className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="font-bold text-gray-900 mb-1">
+                  {filtered.length - FREE_JOB_LIMIT} more jobs locked
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Upgrade to Pro to unlock all {filtered.length} jobs, HR emails, deep evaluation &amp; more
+                </p>
+                <a
+                  href="/settings?tab=billing"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white font-bold text-sm shadow-md hover:shadow-lg hover:scale-105 transition-all duration-200"
+                >
+                  <Zap className="w-4 h-4" /> Upgrade to Pro
+                </a>
+              </motion.div>
+            )}
           </motion.div>
         )}
 
@@ -496,13 +608,13 @@ export default function Results() {
               </div>
 
               {/* Tabs */}
-              <div className="flex border-b border-gray-100 flex-shrink-0 px-1">
-                {['details', 'contacts', 'status', 'ai'].map(tab => (
+              <div className="flex border-b border-gray-100 flex-shrink-0 px-1 overflow-x-auto">
+                {['details', 'contacts', 'status', 'ai', 'eval', 'prep'].map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={cn(
-                      'flex-1 py-3 text-xs font-semibold capitalize transition-colors border-b-2',
+                      'flex-shrink-0 px-2 py-3 text-xs font-semibold capitalize transition-colors border-b-2 whitespace-nowrap',
                       activeTab === tab
                         ? 'border-blue-600 text-blue-700'
                         : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -510,7 +622,10 @@ export default function Results() {
                   >
                     {tab === 'contacts'
                       ? `Contacts${(selected.allRecruiterContacts?.length || (selected.recruiterEmail ? 1 : 0)) > 0 ? ` (${selected.allRecruiterContacts?.length || 1})` : ''}`
-                      : tab === 'ai' ? 'AI Tools' : tab}
+                      : tab === 'ai' ? 'AI Tools'
+                      : tab === 'eval' ? 'Deep Eval'
+                      : tab === 'prep' ? 'Prep'
+                      : tab}
                   </button>
                 ))}
               </div>
@@ -536,14 +651,40 @@ export default function Results() {
                     ) : (
                       <p className="text-sm text-gray-400 italic">No description available</p>
                     )}
-                    <a
-                      href={selected.applyUrl || selected.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-primary w-full justify-center"
-                    >
-                      <ArrowUpRight className="w-4 h-4" /> Apply Now
-                    </a>
+                    {/* Liveness status */}
+                    {selected.liveness && (
+                      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold',
+                        selected.liveness === 'active'    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        selected.liveness === 'expired'   ? 'bg-red-50 text-red-600 border border-red-200' :
+                        'bg-amber-50 text-amber-700 border border-amber-200'
+                      )}>
+                        {selected.liveness === 'active'  && <ShieldCheck className="w-3.5 h-3.5" />}
+                        {selected.liveness === 'expired' && <AlertCircle className="w-3.5 h-3.5" />}
+                        {selected.liveness === 'uncertain' && <HelpCircle className="w-3.5 h-3.5" />}
+                        {selected.liveness === 'active'   ? 'Job is still active' :
+                         selected.liveness === 'expired'  ? 'Job may be closed' : 'Status uncertain'}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <a
+                        href={selected.applyUrl || selected.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-primary flex-1 justify-center"
+                      >
+                        <ArrowUpRight className="w-4 h-4" /> Apply Now
+                      </a>
+                      <button
+                        onClick={() => checkLiveness(selected)}
+                        disabled={livenessLoading[selected._id]}
+                        className="btn btn-secondary px-3"
+                        title="Check if job is still open"
+                      >
+                        {livenessLoading[selected._id]
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <RefreshCw className="w-4 h-4" />}
+                      </button>
+                    </div>
                     <button
                       onClick={() => {
                         const allEmails = [
@@ -711,11 +852,296 @@ export default function Results() {
                     </div>
                   </motion.div>
                 )}
+
+                {activeTab === 'eval' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                    {selected.deepEval ? (
+                      <DeepEvalReport eval={selected.deepEval} />
+                    ) : (
+                      <div className="text-center py-6 space-y-3">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center mx-auto">
+                          <Sparkles className="w-7 h-7 text-violet-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">Deep Job Evaluation</p>
+                          <p className="text-xs text-gray-400 mt-1">A-F score · CV gap analysis · salary verdict · red flags</p>
+                        </div>
+                        {isPro ? (
+                          <button
+                            onClick={() => runDeepEval(selected)}
+                            disabled={evalLoading}
+                            className="btn btn-primary w-full justify-center"
+                          >
+                            {evalLoading
+                              ? <><Loader2 className="w-4 h-4 animate-spin" /> Evaluating…</>
+                              : <><Sparkles className="w-4 h-4" /> Run Deep Evaluation</>}
+                            <span className="ml-auto text-[10px] bg-blue-500 px-1.5 py-0.5 rounded-full">5 cr</span>
+                          </button>
+                        ) : (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                            Upgrade to Pro to unlock deep evaluation
+                            <Link to="/billing" className="block font-semibold mt-1 text-amber-800 hover:underline">Upgrade Now →</Link>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {selected.deepEval && (
+                      <button
+                        onClick={() => runDeepEval(selected)}
+                        disabled={evalLoading}
+                        className="btn btn-secondary btn-sm w-full justify-center"
+                      >
+                        {evalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                        Refresh Evaluation
+                      </button>
+                    )}
+                  </motion.div>
+                )}
+
+                {activeTab === 'prep' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                    {selected.interviewPrep ? (
+                      <InterviewPrepPanel prep={selected.interviewPrep} />
+                    ) : (
+                      <div className="text-center py-6 space-y-3">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center mx-auto">
+                          <Users className="w-7 h-7 text-emerald-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">Interview Prep</p>
+                          <p className="text-xs text-gray-400 mt-1">6 tailored questions with STAR hints · company tips</p>
+                        </div>
+                        <button
+                          onClick={() => runInterviewPrep(selected)}
+                          disabled={prepLoading}
+                          className="btn btn-primary w-full justify-center"
+                          style={{ background: 'linear-gradient(135deg, #059669, #0d9488)' }}
+                        >
+                          {prepLoading
+                            ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+                            : <><Sparkles className="w-4 h-4" /> Generate Interview Prep</>}
+                          <span className="ml-auto text-[10px] bg-emerald-500 px-1.5 py-0.5 rounded-full">5 cr</span>
+                        </button>
+                      </div>
+                    )}
+                    {selected.interviewPrep && (
+                      <button
+                        onClick={() => runInterviewPrep(selected)}
+                        disabled={prepLoading}
+                        className="btn btn-secondary btn-sm w-full justify-center"
+                      >
+                        {prepLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                        Regenerate
+                      </button>
+                    )}
+                  </motion.div>
+                )}
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Deep Eval Score badge helper ─────────────────────────────────
+function ScoreGrade({ score }) {
+  // Normalize: AI returns 0-5 scale, matchScore uses 0-100. Detect and convert.
+  const normalized = score <= 5 ? Math.round(score * 20) : score;
+  const grade = normalized >= 85 ? 'A' : normalized >= 70 ? 'B' : normalized >= 55 ? 'C' : normalized >= 40 ? 'D' : 'F';
+  const style  =
+    grade === 'A' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+    grade === 'B' ? 'bg-blue-100 text-blue-700 border-blue-300' :
+    grade === 'C' ? 'bg-amber-100 text-amber-700 border-amber-300' :
+    grade === 'D' ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                    'bg-red-100 text-red-600 border-red-300';
+  return (
+    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-base font-black border ${style}`}>
+      {grade} <span className="text-xs font-semibold opacity-70">({normalized})</span>
+    </span>
+  );
+}
+
+// ── Deep Evaluation Report ────────────────────────────────────────
+function DeepEvalReport({ eval: ev }) {
+  return (
+    <div className="space-y-4">
+      {/* Score header */}
+      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-2xl border border-violet-100">
+        <div>
+          <p className="text-xs text-violet-500 font-semibold uppercase tracking-wide mb-1">Overall Score</p>
+          <ScoreGrade score={ev.score} />
+        </div>
+        {ev.archetype && (
+          <div className="text-right">
+            <p className="text-xs text-gray-400 mb-1">Role Type</p>
+            <span className="text-xs font-bold text-violet-700 bg-violet-100 px-2.5 py-1 rounded-full">{ev.archetype}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Summary */}
+      {ev.summary && (
+        <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Verdict</p>
+          <p className="text-sm text-gray-700 leading-relaxed">{ev.summary}</p>
+        </div>
+      )}
+
+      {/* Salary */}
+      {ev.salaryRange && (
+        <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+          <p className="text-xs font-semibold text-emerald-700">Salary Range</p>
+          <p className="text-sm font-bold text-emerald-800">{ev.salaryRange}</p>
+        </div>
+      )}
+
+      {/* CV Gaps */}
+      {ev.cvGaps?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-orange-500" /> CV Gaps
+          </p>
+          <ul className="space-y-1.5">
+            {ev.cvGaps.map((gap, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0 mt-1.5" />
+                {gap}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Top CV Changes */}
+      {ev.topCvChanges?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-blue-500" /> Recommended CV Changes
+          </p>
+          <ul className="space-y-1.5">
+            {ev.topCvChanges.map((change, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0 mt-1.5" />
+                {change}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Interview Questions preview */}
+      {ev.interviewQs?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5 text-violet-500" /> Likely Interview Questions
+          </p>
+          <ul className="space-y-1.5">
+            {ev.interviewQs.slice(0, 3).map((q, i) => (
+              <li key={i} className="text-xs text-gray-600 bg-violet-50 rounded-lg px-3 py-2 border border-violet-100">
+                {q}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Interview Prep Panel ──────────────────────────────────────────
+function InterviewPrepPanel({ prep }) {
+  const [open, setOpen] = useState(null);
+  const typeColor = (type) =>
+    type === 'technical'   ? 'bg-blue-100 text-blue-700' :
+    type === 'behavioral'  ? 'bg-violet-100 text-violet-700' :
+    type === 'situational' ? 'bg-amber-100 text-amber-700' :
+    type === 'culture'     ? 'bg-emerald-100 text-emerald-700' :
+    'bg-gray-100 text-gray-600';
+
+  return (
+    <div className="space-y-4">
+      {/* Questions */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Practice Questions</p>
+        <div className="space-y-2">
+          {prep.questions?.map((q, i) => (
+            <div key={i} className="border border-gray-100 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setOpen(open === i ? null : i)}
+                className="w-full flex items-start gap-2.5 p-3 text-left hover:bg-gray-50 transition-colors"
+              >
+                <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-600 font-bold text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 leading-snug">{q.question}</p>
+                  {q.type && (
+                    <span className={`inline-block mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize ${typeColor(q.type)}`}>
+                      {q.type}
+                    </span>
+                  )}
+                </div>
+                <span className="text-gray-300 flex-shrink-0">{open === i ? '▲' : '▼'}</span>
+              </button>
+              {open === i && q.starHint && (
+                <div className="px-4 pb-3 bg-blue-50 border-t border-blue-100">
+                  <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wide mt-2 mb-1">STAR Hint</p>
+                  <p className="text-xs text-blue-700 leading-relaxed">{q.starHint}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Company research tips */}
+      {prep.companyResearchTips?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <Building className="w-3.5 h-3.5 text-indigo-500" /> Research Before Interview
+          </p>
+          <ul className="space-y-1.5">
+            {prep.companyResearchTips.map((tip, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0 mt-1.5" />
+                {tip}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Keywords to mention */}
+      {prep.keywordsToMention?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Keywords to Use</p>
+          <div className="flex flex-wrap gap-1.5">
+            {prep.keywordsToMention.map((kw, i) => (
+              <span key={i} className="text-[11px] font-medium px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Questions to ask */}
+      {prep.questionsToAsk?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5 text-violet-500" /> Questions to Ask Them
+          </p>
+          <ul className="space-y-1.5">
+            {prep.questionsToAsk.map((q, i) => (
+              <li key={i} className="text-xs text-gray-600 bg-violet-50 rounded-lg px-3 py-2 border border-violet-100 italic">
+                "{q}"
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
