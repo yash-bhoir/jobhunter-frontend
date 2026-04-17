@@ -143,7 +143,8 @@ export default function AdminUsers() {
 
         {/* Users table */}
         <div className="flex-1 card overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[540px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">User</th>
@@ -221,6 +222,7 @@ export default function AdminUsers() {
               ))}
             </tbody>
           </table>
+          </div>
 
           {/* Pagination */}
           {total > 20 && (

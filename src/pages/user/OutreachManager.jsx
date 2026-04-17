@@ -78,13 +78,62 @@ export default function OutreachManager() {
         api.get(`/recruiters/by-search/${searchId}`),
         api.get('/profile').catch(() => ({ data: { data: {} } })),
       ]);
-      setData(contactsRes.data.data);
+
+      // In single-company mode: ensure the company is in the list with the right email.
+      // This handles the case where the user navigates from a job detail card that has
+      // contacts not yet stored in the recruiter lookup table.
+      let companies = [...(contactsRes.data.data.companies || [])];
+      if (singleCompany && singleTo) {
+        // Parse all emails passed via URL (comma-separated)
+        const toEmails = singleTo.split(',').map(e => e.trim()).filter(Boolean);
+        const allContacts = toEmails.map(email => ({
+          email,
+          name:       null,
+          title:      null,
+          confidence: null,
+          source:     'job',
+          status:     'unknown',
+          linkedin:   null,
+        }));
+        const primaryEmail = toEmails[0];
+
+        const idx = companies.findIndex(c => c.company === singleCompany);
+        if (idx === -1) {
+          // Company not in this search — inject a synthetic entry with ALL emails
+          companies.unshift({
+            company:              singleCompany,
+            recruiterEmail:       primaryEmail,
+            recruiterName:        null,
+            recruiterConfidence:  null,
+            recruiterSource:      null,
+            recruiterLinkedIn:    null,
+            careerPageUrl:        null,
+            allRecruiterContacts: allContacts,
+            jobs: [{ title: singleTitle || '', url: null, matchScore: null, status: 'found' }],
+          });
+        } else {
+          // Company exists — merge all emails into allRecruiterContacts
+          const existing = companies[idx].allRecruiterContacts || [];
+          const existingEmails = new Set(existing.map(c => c.email));
+          const merged = [
+            ...existing,
+            ...allContacts.filter(c => !existingEmails.has(c.email)),
+          ];
+          companies[idx] = {
+            ...companies[idx],
+            recruiterEmail:       companies[idx].recruiterEmail || primaryEmail,
+            allRecruiterContacts: merged,
+          };
+        }
+      }
+      const patchedData = { ...contactsRes.data.data, companies };
+      setData(patchedData);
+
       const hasRes = !!profileRes.data.data?.resume?.url;
       setHasResume(hasRes);
-      if (hasRes) setAttachResume(true); // auto-enable if resume is uploaded
-      const withEmail = contactsRes.data.data.companies
-        .filter(c => c.recruiterEmail)
-        .map(c => c.company);
+      if (hasRes) setAttachResume(true);
+
+      const withEmail = companies.filter(c => c.recruiterEmail).map(c => c.company);
       // In single-company mode only select that company; else select all with email
       setSelected(singleCompany ? [singleCompany] : withEmail);
     } catch {
@@ -190,26 +239,50 @@ export default function OutreachManager() {
       return;
     }
 
+    // Collect all unique recipient emails for this company
+    const allContacts = companyData.allRecruiterContacts?.length > 0
+      ? companyData.allRecruiterContacts
+      : companyData.recruiterEmail
+        ? [{ email: companyData.recruiterEmail, name: companyData.recruiterName }]
+        : [];
+    const recipients = [...new Set(allContacts.map(c => c.email).filter(Boolean))];
+    if (recipients.length === 0) { toast.error('No email address found'); return; }
+
     setSending(p => ({ ...p, [company]: true }));
     try {
       const optimized = optimizedResumes[company];
-      // If ATS-optimized PDF exists, send it; otherwise send original via backend download
       const hasOptimizedBuffer = !!(optimized?.resumeBuffer);
-      await api.post('/outreach/send', {
-        to:             companyData.recruiterEmail,
+      const basePayload = {
         subject:        preview.subject,
         body:           preview.body,
         company,
-        recruiterName:  companyData.recruiterName,
-        emailId:        preview.emailId,
         jobId:          companyData.jobs[0]?._id,
-        attachResume:   !hasOptimizedBuffer && attachResume,  // let backend fetch original
+        attachResume:   !hasOptimizedBuffer && attachResume,
         resumeBuffer:   hasOptimizedBuffer ? optimized.resumeBuffer : undefined,
         resumeFilename: hasOptimizedBuffer ? (optimized.filename || 'resume-optimized.pdf') : undefined,
-      });
+      };
+
+      if (recipients.length === 1) {
+        await api.post('/outreach/send', {
+          ...basePayload,
+          to:            recipients[0],
+          recruiterName: companyData.recruiterName,
+          emailId:       preview.emailId,
+        });
+      } else {
+        // Multiple contacts — use bulk send
+        await api.post('/outreach/bulk', {
+          emails: recipients.map(to => ({
+            ...basePayload,
+            to,
+            recruiterName: allContacts.find(c => c.email === to)?.name || null,
+          })),
+        });
+      }
+
       setSent(p => ({ ...p, [company]: true }));
       const wasAttached = attachResume && hasResume;
-      toast.success(`Email sent to ${companyData.recruiterEmail}${wasAttached ? ' 📎 resume attached' : ''}`);
+      toast.success(`Email sent to ${recipients.length} contact${recipients.length > 1 ? 's' : ''}${wasAttached ? ' 📎 with resume' : ''}`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Send failed');
     } finally {
@@ -282,8 +355,9 @@ export default function OutreachManager() {
     </div>
   );
 
-  // In single-company mode, show only the requested company
-  const allCompanies  = singleCompany
+  // In single-company mode, filter to just that company.
+  // The company is guaranteed to be in data.companies because fetchData injected it.
+  const allCompanies = singleCompany
     ? data.companies.filter(c => c.company === singleCompany)
     : data.companies;
   const withEmail    = allCompanies.filter(c => c.recruiterEmail);
@@ -294,18 +368,18 @@ export default function OutreachManager() {
     <div className="max-w-4xl mx-auto space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             {singleCompany && (
               <button
                 onClick={() => navigate(-1)}
-                className="btn btn-sm btn-secondary"
+                className="btn btn-sm btn-secondary flex-shrink-0"
               >
                 ← Back
               </button>
             )}
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
               {singleCompany ? `Outreach — ${singleCompany}` : 'Outreach Manager'}
             </h1>
           </div>
@@ -319,12 +393,17 @@ export default function OutreachManager() {
         <button
           onClick={() => navigate('/profile?tab=smtp')}
           className={cn(
-            'btn btn-sm',
+            'btn btn-sm flex-shrink-0',
             smtpStatus?.configured ? 'btn-secondary' : 'btn-primary'
           )}
         >
           <Settings className="w-4 h-4" />
-          {smtpStatus?.configured ? `Email: ${smtpStatus.default?.email || smtpStatus.accounts?.[0]?.email || 'Configured'}` : 'Setup Email'}
+          <span className="hidden sm:inline">
+            {smtpStatus?.configured ? `Email: ${smtpStatus.default?.email || smtpStatus.accounts?.[0]?.email || 'Configured'}` : 'Setup Email'}
+          </span>
+          <span className="sm:hidden">
+            {smtpStatus?.configured ? 'Email ✓' : 'Setup'}
+          </span>
         </button>
       </div>
 
@@ -352,7 +431,7 @@ export default function OutreachManager() {
 
       {/* Stats + actions — hidden in single-company mode */}
       {!singleCompany && (
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="card card-body text-center">
           <div className="text-2xl font-bold text-gray-900">{data.companies.length}</div>
           <div className="text-xs text-gray-500 mt-0.5">Companies</div>
@@ -519,50 +598,53 @@ export default function OutreachManager() {
                       )}
                     </div>
 
-                    {/* HR Contact info */}
-                    <div className="mt-1 flex items-center gap-3 flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <Mail className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="text-sm text-blue-600 font-medium">{company.recruiterEmail}</span>
-                        <button
-                          onClick={() => copyEmail(company.recruiterEmail)}
-                          className="p-0.5 text-gray-400 hover:text-gray-600"
-                        >
-                          {copied === company.recruiterEmail
-                            ? <Check className="w-3.5 h-3.5 text-green-500" />
-                            : <Copy className="w-3.5 h-3.5" />
-                          }
-                        </button>
-                      </div>
-
-                      {company.recruiterName && (
-                        <span className="text-sm text-gray-500">{company.recruiterName}</span>
-                      )}
-
-                      {company.recruiterConfidence && (
-                        <span className={cn(
-                          'badge text-xs',
-                          company.recruiterConfidence >= 70 ? 'badge-green' :
-                          company.recruiterConfidence >= 40 ? 'badge-amber' : 'badge-gray'
-                        )}>
-                          {company.recruiterConfidence}% confidence
-                        </span>
-                      )}
+                    {/* HR Contacts — show all from allRecruiterContacts, fall back to single recruiterEmail */}
+                    <div className="mt-1.5 space-y-1">
+                      {(company.allRecruiterContacts?.length > 0
+                        ? company.allRecruiterContacts
+                        : company.recruiterEmail
+                          ? [{ email: company.recruiterEmail, name: company.recruiterName, confidence: company.recruiterConfidence, source: company.recruiterSource, linkedin: company.recruiterLinkedIn }]
+                          : []
+                      ).map((contact, ci) => (
+                        <div key={ci} className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1">
+                            <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span className="text-sm text-blue-600 font-medium">{contact.email}</span>
+                            <button
+                              onClick={() => copyEmail(contact.email)}
+                              className="p-0.5 text-gray-400 hover:text-gray-600"
+                            >
+                              {copied === contact.email
+                                ? <Check className="w-3.5 h-3.5 text-green-500" />
+                                : <Copy className="w-3.5 h-3.5" />
+                              }
+                            </button>
+                          </div>
+                          {contact.name && (
+                            <span className="text-xs text-gray-500">{contact.name}</span>
+                          )}
+                          {contact.confidence > 0 && (
+                            <span className={cn(
+                              'badge text-xs',
+                              contact.confidence >= 70 ? 'badge-green' :
+                              contact.confidence >= 40 ? 'badge-amber' : 'badge-gray'
+                            )}>
+                              {contact.confidence}% confidence
+                            </span>
+                          )}
+                          {contact.linkedin && (
+                            <a href={contact.linkedin} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-0.5 text-xs text-blue-500 hover:text-blue-700">
+                              <Linkedin className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
                     </div>
 
-                    {/* Links */}
-                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                      {company.recruiterLinkedIn && (
-                        <a
-                          href={company.recruiterLinkedIn}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
-                        >
-                          <Linkedin className="w-3 h-3" /> LinkedIn Profile
-                        </a>
-                      )}
-                      {company.careerPageUrl && (
+                    {/* Careers page link */}
+                    {company.careerPageUrl && (
+                      <div className="mt-1">
                         <a
                           href={company.careerPageUrl}
                           target="_blank"
@@ -571,8 +653,8 @@ export default function OutreachManager() {
                         >
                           <ExternalLink className="w-3 h-3" /> Careers Page
                         </a>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {/* Jobs under this company */}
                     <div className="mt-2 flex gap-1 flex-wrap">
@@ -933,7 +1015,7 @@ export default function OutreachManager() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {withoutEmail.map(company => (
               <div key={company.company} className="card card-body py-3 opacity-60">
                 <div className="flex items-center gap-2">

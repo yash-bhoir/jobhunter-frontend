@@ -56,7 +56,7 @@ export default function AdminAnalytics() {
 
       {/* Revenue */}
       {revenue && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="card card-body">
             <p className="text-sm text-gray-500">MRR</p>
             <p className="text-3xl font-bold text-gray-900 mt-1">₹{fNumber(revenue.mrr)}</p>

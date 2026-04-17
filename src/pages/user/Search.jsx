@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search as SearchIcon, MapPin, Briefcase, User,
   ChevronDown, ChevronUp, Loader2, Zap, Mail, CheckCircle,
-  Clock, RefreshCw, Sparkles, History, ChevronRight, FileText, Wand2
+  Clock, RefreshCw, Sparkles, History, ChevronRight,
+  Wand2, ArrowRight, X, Target, Navigation
 } from 'lucide-react';
 import { useAuth }     from '@hooks/useAuth';
 import { useSocket }   from '@hooks/useSocket';
@@ -24,19 +26,28 @@ const WORK_TYPES = [
   { value: 'onsite', label: 'On-site' },
 ];
 
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+};
+const stagger  = { show: { transition: { staggerChildren: 0.08 } } };
+const itemFade = {
+  hidden: { opacity: 0, y: 8 },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.25 } },
+};
+
 export default function Search() {
   const { user }  = useAuth();
   const toast     = useToast();
   const navigate  = useNavigate();
   const dispatch  = useDispatch();
 
+  const userPlatforms = PLATFORMS.filter(p => !p.adminOnly);
   const [role,           setRole]           = useState(user?.profile?.targetRole || '');
   const [location,       setLocation]       = useState(user?.profile?.preferredLocations?.[0] || 'India');
   const [workType,       setWorkType]       = useState(user?.profile?.workType || 'any');
-  // adminOnly platforms are controlled server-side; exclude from user-facing selector
-  const userPlatforms = PLATFORMS.filter(p => !p.adminOnly);
   const [platforms,      setPlatforms]      = useState(userPlatforms.map(p => p.id));
-  const [showAdvanced,   setShowAdvanced]   = useState(false);
+  const [showPlatforms,  setShowPlatforms]  = useState(false);
   const [loading,        setLoading]        = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [progress,       setProgress]       = useState({});
@@ -44,641 +55,716 @@ export default function Search() {
   const [done,           setDone]           = useState(false);
   const [results,        setResults]        = useState(null);
   const [cacheInfo,      setCacheInfo]      = useState(null);
-  const [history,          setHistory]          = useState([]);
-  const [historyLoading,   setHistoryLoading]   = useState(false);
-  const [suggestions,      setSuggestions]      = useState(null);
-  const [suggestLoading,   setSuggestLoading]   = useState(false);
-  const [showSuggestions,  setShowSuggestions]  = useState(false);
+  const [history,        setHistory]        = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [suggestions,    setSuggestions]    = useState(null);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [showSugg,       setShowSugg]       = useState(false);
 
+  const [radius,          setRadius]          = useState(0);           // 0 = Any
+  const [locSuggestions,  setLocSuggestions]  = useState([]);
+  const [locLoading,      setLocLoading]      = useState(false);
+  const [showLocDrop,     setShowLocDrop]     = useState(false);
+  const [geoLoading,      setGeoLoading]      = useState(false);
+  const locDebounce   = useRef(null);
+  const locInputRef   = useRef(null);
+  const locDropRef    = useRef(null);
   const cacheDebounce = useRef(null);
 
-  // ── Check cache whenever search params change ──────────────────
+  const RADIUS_OPTIONS = [
+    { label: 'Any', value: 0 },
+    { label: '10 km', value: 10 },
+    { label: '25 km', value: 25 },
+    { label: '50 km', value: 50 },
+    { label: '100 km', value: 100 },
+  ];
+
+  // Close location dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (locDropRef.current && !locDropRef.current.contains(e.target) &&
+          locInputRef.current && !locInputRef.current.contains(e.target)) {
+        setShowLocDrop(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Location autocomplete via OpenStreetMap Nominatim (free, no key needed)
+  const fetchLocSuggestions = (query) => {
+    clearTimeout(locDebounce.current);
+    if (!query.trim() || query.length < 2) { setLocSuggestions([]); setShowLocDrop(false); return; }
+    locDebounce.current = setTimeout(async () => {
+      setLocLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6&featuretype=city`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
+        const data = await res.json();
+        const formatted = data.map(r => {
+          const a = r.address || {};
+          const city    = a.city || a.town || a.village || a.county || r.name;
+          const state   = a.state || '';
+          const country = a.country || '';
+          const label   = [city, state, country].filter(Boolean).join(', ');
+          return { label, city, lat: r.lat, lon: r.lon };
+        }).filter((v, i, arr) => arr.findIndex(x => x.label === v.label) === i); // dedupe
+        setLocSuggestions(formatted);
+        setShowLocDrop(formatted.length > 0);
+      } catch { setLocSuggestions([]); }
+      finally { setLocLoading(false); }
+    }, 300);
+  };
+
+  const pickLocation = (item) => {
+    setLocation(item.label);
+    setLocSuggestions([]);
+    setShowLocDrop(false);
+  };
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, { headers: { 'Accept-Language': 'en' } });
+          const data = await res.json();
+          const a    = data.address || {};
+          const city = a.city || a.town || a.village || a.county || data.name || 'Your location';
+          const loc  = [city, a.state, a.country].filter(Boolean).join(', ');
+          setLocation(loc);
+          toast.success(`Location set to ${city}`);
+        } catch { toast.error('Could not resolve location'); }
+        finally { setGeoLoading(false); }
+      },
+      () => { toast.error('Location access denied'); setGeoLoading(false); }
+    );
+  };
+
   useEffect(() => {
     if (!role.trim()) { setCacheInfo(null); return; }
-
     clearTimeout(cacheDebounce.current);
     cacheDebounce.current = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({
-          role: role.trim(),
-          ...(location && { location }),
-          ...(workType && { workType }),
-        });
+        const params = new URLSearchParams({ role: role.trim(), ...(location && { location }), ...(workType && { workType }) });
         const { data } = await api.get(`/search/check-cache?${params}`);
         setCacheInfo(data.data?.hasCache ? data.data : null);
-      } catch {
-        setCacheInfo(null);
-      }
+      } catch { setCacheInfo(null); }
     }, 800);
-
     return () => clearTimeout(cacheDebounce.current);
   }, [role, location, workType]);
 
-  // ── Load search history on mount ─────────────────────────────
   useEffect(() => {
     setHistoryLoading(true);
-    api.get('/search/history?limit=8')
-      .then(({ data }) => setHistory(data.data || []))
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false));
+    api.get('/search/history?limit=6').then(({ data }) => setHistory(data.data || [])).catch(() => {}).finally(() => setHistoryLoading(false));
   }, []);
 
-  // ── Real-time progress via socket ─────────────────────────────
   useSocket('search:progress', (data) => {
     setProgress(prev => ({ ...prev, [data.platform]: data }));
     dispatch(updateProgress(data));
   });
-
   useSocket('search:email_finding', (data) => {
     setEmailProgress(data);
-    if (data.status === 'done' && data.found > 0) {
-      toast.success(`Found ${data.found} HR email contacts!`);
-    }
+    if (data.status === 'done' && data.found > 0) toast.success(`Found ${data.found} HR email contacts!`);
   });
+  useSocket('search:complete', () => { dispatch(completeSearch()); setDone(true); });
 
-  useSocket('search:complete', () => {
-    dispatch(completeSearch());
-    setDone(true);
-  });
-
-  const togglePlatform = (id) => {
-    setPlatforms(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
-  };
+  const togglePlatform = (id) => setPlatforms(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
 
   const loadResumeSuggestions = async () => {
     setSuggestLoading(true);
     try {
       const { data } = await api.get('/search/resume-suggest');
-      setSuggestions(data.data);
-      setShowSuggestions(true);
+      setSuggestions(data.data); setShowSugg(true);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Upload your resume first to get smart suggestions');
-    } finally {
-      setSuggestLoading(false);
-    }
+      toast.error(err.response?.data?.message || 'Upload your resume first');
+    } finally { setSuggestLoading(false); }
   };
 
   const applySuggestion = (s) => {
-    setRole(s.role);
-    setLocation(s.location || '');
-    setWorkType(s.workType || 'any');
-    setShowSuggestions(false);
-    toast.success(`Applied: ${s.label}`);
+    setRole(s.role); setLocation(s.location || ''); setWorkType(s.workType || 'any');
+    setShowSugg(false); toast.success(`Applied: ${s.label}`);
   };
 
   const loadFromProfile = async () => {
     setProfileLoading(true);
     try {
       const { data } = await api.get('/search/profile-search');
-      setRole(data.data.role);
-      setLocation(data.data.location);
-      setWorkType(data.data.workType || 'any');
-      toast.success('Search filled from your profile!');
+      setRole(data.data.role); setLocation(data.data.location); setWorkType(data.data.workType || 'any');
+      toast.success('Filled from your profile!');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Complete your profile first');
-    } finally {
-      setProfileLoading(false);
-    }
+    } finally { setProfileLoading(false); }
   };
 
-  // ── Run search (force=false uses cache, force=true skips cache) ─
   const handleSearch = async (force = false) => {
-    if (!role.trim()) {
-      toast.error('Please enter a job role');
-      return;
-    }
-    if (platforms.length === 0) {
-      toast.error('Select at least one platform');
-      return;
-    }
-
-    setLoading(true);
-    setDone(false);
-    setProgress({});
-    setEmailProgress(null);
-    setResults(null);
-    setCacheInfo(null);
+    if (!role.trim()) { toast.error('Please enter a job role'); return; }
+    if (platforms.length === 0) { toast.error('Select at least one platform'); return; }
+    setLoading(true); setDone(false); setProgress({}); setEmailProgress(null); setResults(null); setCacheInfo(null);
     dispatch(startSearch(null));
-
     try {
-      const { data } = await api.post('/search/run', {
-        role:     role.trim(),
-        location: location.trim() || 'India',
-        workType,
-        platforms,
-        force,
-      });
-
+      const { data } = await api.post('/search/run',
+        { role: role.trim(), location: location.trim() || 'India', workType, platforms, force, ...(radius > 0 && { radius }) },
+        { timeout: 90000 }  // 90s — search can take up to 40-50s across all platforms
+      );
       setResults(data.data);
       dispatch(setJobs(data.data.jobs || []));
-      dispatch(completeSearch());
-      setDone(true);
-
-      if (data.data.fromCache) {
-        toast.success(`Loaded from cache — saved 10 credits!`);
-      } else {
-        toast.success(`Found ${data.data.totalFound} jobs!`);
-      }
-
-      // Refresh history to include the new/cached search
-      api.get('/search/history?limit=8')
-        .then(({ data: h }) => setHistory(h.data || []))
-        .catch(() => {});
-
+      dispatch(completeSearch()); setDone(true);
+      if (data.data.fromCache) toast.success('Loaded from cache — saved 10 credits!');
+      else toast.success(`Found ${data.data.totalFound} jobs!`);
+      api.get('/search/history?limit=6').then(({ data: h }) => setHistory(h.data || [])).catch(() => {});
       setTimeout(() => navigate(`/results${data.data.searchId ? `?searchId=${data.data.searchId}` : ''}`), 2000);
-
     } catch (err) {
-      dispatch(setSearchError(err.response?.data?.message || 'Search failed'));
-      toast.error(err.response?.data?.message || 'Search failed');
-    } finally {
-      setLoading(false);
-    }
+      // Timeout means search is still running in background — redirect to results
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        toast('Search is taking longer than usual — checking results…');
+        dispatch(completeSearch());
+        setTimeout(() => navigate('/results'), 3000);
+      } else {
+        dispatch(setSearchError(err.response?.data?.message || 'Search failed'));
+        toast.error(err.response?.data?.message || 'Search failed');
+      }
+    } finally { setLoading(false); }
   };
 
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
+  const doneJobs   = results?.jobs?.length || 0;
+  const doneEmails = results?.emailsFound  || 0;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
 
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Job Search</h1>
-        <p className="text-gray-500 mt-1 text-sm">
-          Search across {PLATFORMS.length} platforms simultaneously
-          <span className="ml-2 badge badge-blue">10 credits per search</span>
+      {/* Header */}
+      <motion.div variants={fadeUp}>
+        <h1 className="text-xl font-bold text-gray-900">
+          Find your{' '}
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-violet-600">
+            dream job
+          </span>
+        </h1>
+        <p className="text-sm text-gray-400 mt-0.5">
+          {userPlatforms.length} platforms · HR emails · AI outreach
         </p>
-      </div>
+      </motion.div>
 
-      {/* ── Smart search from profile ───────────────────────────── */}
-      <div className="card card-body bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-semibold text-purple-800 text-sm">🎯 Smart Search from Profile</p>
-            <p className="text-xs text-purple-600 mt-0.5">
-              Auto-fill from your target role, preferred location, skills and work type
-            </p>
-          </div>
-          <button
-            onClick={loadFromProfile}
-            disabled={profileLoading}
-            className="btn btn-sm bg-purple-600 text-white hover:bg-purple-700 flex-shrink-0"
+      {/* Two-column layout on desktop */}
+      <div className="lg:grid lg:grid-cols-[1fr_300px] lg:gap-5 space-y-4 lg:space-y-0">
+
+        {/* ── LEFT: main search form ─────────────────────────── */}
+        <div className="space-y-4 min-w-0">
+
+          {/* Search card */}
+          <motion.div
+            variants={fadeUp}
+            className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
+            style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.08)' }}
           >
-            {profileLoading
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <User className="w-4 h-4" />
-            }
-            Auto-Fill
-          </button>
-        </div>
-      </div>
+            <div className="h-0.5 w-full bg-gradient-to-r from-blue-500 via-violet-500 to-indigo-500" />
+            <div className="p-5 space-y-3.5">
 
-      {/* ── Resume-based smart suggestions ─────────────────────── */}
-      <div className="card card-body bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-semibold text-indigo-800 text-sm flex items-center gap-1.5">
-              <FileText className="w-4 h-4" /> Resume-Based Search Suggestions
-            </p>
-            <p className="text-xs text-indigo-600 mt-0.5">
-              AI reads your resume + skills and suggests the best matching job queries
-            </p>
-          </div>
-          <button
-            onClick={loadResumeSuggestions}
-            disabled={suggestLoading}
-            className="btn btn-sm bg-indigo-600 text-white hover:bg-indigo-700 flex-shrink-0"
-          >
-            {suggestLoading
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <Wand2 className="w-4 h-4" />
-            }
-            Suggest
-          </button>
-        </div>
-
-        {showSuggestions && suggestions && (
-          <div className="mt-3 space-y-2">
-            {suggestions.detectedStacks?.length > 0 && (
-              <p className="text-xs text-indigo-500">
-                Detected stacks: {suggestions.detectedStacks.join(', ')}
-              </p>
-            )}
-            <div className="grid grid-cols-1 gap-1.5">
-              {suggestions.suggestions.map((s, i) => (
-                <button
-                  key={i}
-                  onClick={() => applySuggestion(s)}
-                  className="flex items-center justify-between gap-2 px-3 py-2 bg-white rounded-lg border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50 text-left transition-colors group"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{s.label}</p>
-                    <p className="text-xs text-gray-500 truncate">{s.description} · {s.location || 'Remote'}</p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {s.priority === 'high' && <span className="badge badge-green text-xs">Best match</span>}
-                    <ChevronRight className="w-4 h-4 text-indigo-400 group-hover:text-indigo-600" />
-                  </div>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowSuggestions(false)}
-              className="text-xs text-indigo-400 hover:text-indigo-600 mt-1"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Cache hit banner ────────────────────────────────────── */}
-      {cacheInfo && !loading && !done && (
-        <div className="card card-body bg-green-50 border-green-300 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2">
-              <Clock className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-green-800">
-                  Recent results available —{' '}
-                  {cacheInfo.daysLeft > 0
-                    ? `${cacheInfo.daysLeft} day${cacheInfo.daysLeft !== 1 ? 's' : ''} left`
-                    : 'expiring soon'}
-                </p>
-                <p className="text-xs text-green-600 mt-0.5">
-                  {cacheInfo.jobCount} jobs from a search {cacheInfo.ageDays === 0 ? 'today' : `${cacheInfo.ageDays} day${cacheInfo.ageDays !== 1 ? 's' : ''} ago`}.
-                  Use for free or run fresh (costs 10 credits).
-                </p>
+              {/* Role */}
+              <div className="relative group">
+                <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                <input
+                  type="text"
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch(false)}
+                  placeholder="Job role — e.g. React Developer, Data Scientist"
+                  className="input pl-10 pr-9 py-3 rounded-xl text-sm"
+                />
+                {role && (
+                  <button onClick={() => setRole('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
-            </div>
-            <div className="flex gap-2 flex-shrink-0">
-              <button
-                onClick={() => handleSearch(false)}
-                className="btn btn-sm bg-green-600 text-white hover:bg-green-700"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Use Free
-              </button>
-              <button
-                onClick={() => handleSearch(true)}
-                className="btn btn-sm btn-secondary"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Fresh
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── Plan info banners ───────────────────────────────────── */}
-      {!isPro && (
-        <div className="card card-body bg-amber-50 border-amber-200 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-amber-700">
-              <strong>Free plan:</strong> HR emails auto-found for top 2 companies.
-              Upgrade to Pro for all companies + bulk outreach.
-            </p>
-            <a href="/billing" className="btn btn-sm bg-amber-500 text-white hover:bg-amber-600 flex-shrink-0">
-              Upgrade
-            </a>
-          </div>
-        </div>
-      )}
-
-      {isPro && (
-        <div className="card card-body bg-blue-50 border-blue-200 py-3">
-          <p className="text-sm text-blue-700">
-            <strong>Pro plan:</strong> HR emails auto-found for ALL companies.
-            Send bulk AI outreach emails after search.
-          </p>
-        </div>
-      )}
-
-      {/* ── Search form ─────────────────────────────────────────── */}
-      <div className="card card-body space-y-4">
-
-        <div>
-          <label className="label">Job Role *</label>
-          <div className="relative">
-            <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={role}
-              onChange={e => setRole(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch(false)}
-              placeholder="e.g. React Developer, Data Scientist, Product Manager"
-              className="input pl-9"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Location</label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={location}
-                onChange={e => setLocation(e.target.value)}
-                placeholder="e.g. Mumbai, Bangalore"
-                className="input pl-9"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="label">Work Type</label>
-            <div className="grid grid-cols-4 gap-1">
-              {WORK_TYPES.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => setWorkType(value)}
-                  className={cn(
-                    'py-2 px-1 text-xs font-medium rounded-lg border transition-colors',
-                    workType === value
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-          >
-            {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            Advanced options — select platforms ({platforms.length} selected)
-          </button>
-
-          {showAdvanced && (
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {userPlatforms.map(platform => {
-                const isSelected = platforms.includes(platform.id);
-                const locked     = platform.proOnly && !isPro;
-                return (
+              {/* Location with autocomplete */}
+              <div className="relative" ref={locDropRef}>
+                <div className="relative flex items-center">
+                  <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    ref={locInputRef}
+                    type="text"
+                    value={location}
+                    onChange={e => { setLocation(e.target.value); fetchLocSuggestions(e.target.value); }}
+                    onFocus={() => { if (locSuggestions.length > 0) setShowLocDrop(true); }}
+                    onKeyDown={e => { if (e.key === 'Escape') setShowLocDrop(false); }}
+                    placeholder="Location — e.g. Mumbai, Remote"
+                    className="input pl-10 pr-10 py-3 rounded-xl text-sm w-full"
+                    autoComplete="off"
+                  />
+                  {/* GPS / spinner */}
                   <button
-                    key={platform.id}
-                    onClick={() => !locked && togglePlatform(platform.id)}
-                    disabled={locked}
+                    type="button"
+                    onClick={useMyLocation}
+                    disabled={geoLoading}
+                    title="Use my location"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500 transition-colors"
+                  >
+                    {geoLoading
+                      ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      : locLoading
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Navigation className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {/* Suggestions dropdown */}
+                <AnimatePresence>
+                  {showLocDrop && locSuggestions.length > 0 && (
+                    <motion.ul
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+                    >
+                      {locSuggestions.map((s, i) => (
+                        <li key={i}>
+                          <button
+                            type="button"
+                            onMouseDown={() => pickLocation(s)}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-blue-50 transition-colors group"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-500 flex-shrink-0 transition-colors" />
+                            <span className="text-sm text-gray-700 truncate">{s.label}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Radius picker — shown for on-site or hybrid */}
+              <AnimatePresence>
+                {(workType === 'onsite' || workType === 'hybrid') && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-400 flex-shrink-0">Within</span>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {RADIUS_OPTIONS.map(({ label, value }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setRadius(value)}
+                            className={cn(
+                              'px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all duration-150',
+                              radius === value
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Work type pills */}
+              <div className="flex gap-2">
+                {WORK_TYPES.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setWorkType(value)}
                     className={cn(
-                      'flex items-center gap-2 p-2.5 rounded-lg border text-left transition-colors text-sm',
-                      locked      ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' :
-                      isSelected  ? 'bg-blue-50 border-blue-300 text-blue-800' :
-                                    'bg-white border-gray-200 hover:border-gray-300 text-gray-700'
+                      'flex-1 py-2 text-xs font-semibold rounded-lg border transition-all duration-150',
+                      workType === value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
                     )}
                   >
-                    <div className={cn(
-                      'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0',
-                      isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
-                    )}>
-                      {isSelected && (
-                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{platform.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{platform.note}</div>
-                    </div>
-                    {locked && <span className="badge badge-amber text-xs ml-auto">Pro</span>}
+                    {label}
                   </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={() => handleSearch(false)}
-          disabled={loading}
-          className="btn btn-primary w-full btn-lg"
-        >
-          {loading
-            ? <><Loader2 className="w-5 h-5 animate-spin" /> Searching...</>
-            : <><SearchIcon className="w-5 h-5" /> Search Jobs + Find HR Emails</>
-          }
-        </button>
-      </div>
-
-      {/* ── Search progress ─────────────────────────────────────── */}
-      {loading && (
-        <div className="card card-body space-y-4">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Zap className="w-5 h-5 text-blue-600 animate-pulse" />
-              <h3 className="font-semibold text-gray-900">Searching platforms...</h3>
-            </div>
-            <div className="space-y-2">
-              {userPlatforms.filter(p => platforms.includes(p.id)).map(platform => {
-                const p = progress[platform.id];
-                return (
-                  <div key={platform.id} className="flex items-center gap-3">
-                    <div className={cn(
-                      'w-2 h-2 rounded-full flex-shrink-0',
-                      !p                   ? 'bg-gray-300 animate-pulse' :
-                      p.status === 'done'  ? 'bg-green-500' :
-                      p.status === 'error' ? 'bg-red-500'   :
-                                             'bg-blue-500 animate-pulse'
-                    )} />
-                    <span className="text-sm text-gray-700 flex-1">{platform.name}</span>
-                    <span className="text-xs text-gray-500">
-                      {!p                   ? 'Waiting...'       :
-                       p.status === 'done'  ? `${p.found} jobs`  :
-                       p.status === 'error' ? 'Failed'           : 'Searching...'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="border-t border-gray-100 pt-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Mail className="w-4 h-4 text-green-600" />
-              <h4 className="text-sm font-semibold text-gray-700">Auto-finding HR emails...</h4>
-              {isPro
-                ? <span className="badge badge-blue text-xs">All companies (Pro)</span>
-                : <span className="badge badge-amber text-xs">Top 2 companies (Free)</span>
-              }
-            </div>
-            {emailProgress ? (
-              <div className="flex items-center gap-2">
-                {emailProgress.status === 'done'
-                  ? <CheckCircle className="w-4 h-4 text-green-500" />
-                  : <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-                }
-                <p className="text-sm text-gray-600">
-                  {emailProgress.status === 'started'
-                    ? `Searching emails for ${emailProgress.total} companies...`
-                    : `Found HR emails for ${emailProgress.found} companies`
-                  }
-                </p>
+                ))}
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-gray-200 animate-pulse" />
-                <p className="text-sm text-gray-400">Waiting for search to complete...</p>
+
+              {/* Helper row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={loadFromProfile}
+                  disabled={profileLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
+                >
+                  {profileLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <User className="w-3 h-3" />}
+                  From profile
+                </button>
+                <button
+                  onClick={loadResumeSuggestions}
+                  disabled={suggestLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
+                >
+                  {suggestLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  AI suggest
+                </button>
+                <button
+                  onClick={() => setShowPlatforms(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors ml-auto"
+                >
+                  {showPlatforms ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  Platforms ({platforms.length}/{userPlatforms.length})
+                </button>
               </div>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* ── Done ────────────────────────────────────────────────── */}
-      {done && results && (
-        <div className={cn(
-          'card card-body space-y-3',
-          results.fromCache ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
-        )}>
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              'w-10 h-10 rounded-full flex items-center justify-center',
-              results.fromCache ? 'bg-green-100' : 'bg-blue-100'
-            )}>
-              {results.fromCache
-                ? <Sparkles className="w-5 h-5 text-green-600" />
-                : <CheckCircle className="w-5 h-5 text-blue-600" />
-              }
-            </div>
-            <div>
-              <p className={cn('font-semibold', results.fromCache ? 'text-green-800' : 'text-blue-800')}>
-                {results.fromCache ? 'Loaded from cache — 10 credits saved!' : 'Search complete!'}
-              </p>
-              <p className={cn('text-sm', results.fromCache ? 'text-green-600' : 'text-blue-600')}>
-                {results.fromCache
-                  ? `${results.jobs?.length} jobs from your recent search`
-                  : <>Found <strong>{results.totalFound}</strong> jobs
-                    {results.emailsFound > 0 && <> + <strong>{results.emailsFound}</strong> HR emails</>}
-                  </>
-                }
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-white rounded-lg p-2 text-center">
-              <div className="text-lg font-bold text-gray-900">{results.jobs?.length || 0}</div>
-              <div className="text-xs text-gray-500">Top Matches</div>
-            </div>
-            <div className="bg-white rounded-lg p-2 text-center">
-              <div className="text-lg font-bold text-green-600">{results.emailsFound || 0}</div>
-              <div className="text-xs text-gray-500">HR Emails</div>
-            </div>
-            <div className="bg-white rounded-lg p-2 text-center">
-              {results.fromCache
-                ? <><div className="text-lg font-bold text-green-600">FREE</div><div className="text-xs text-gray-500">Credits Used</div></>
-                : <><div className="text-lg font-bold text-blue-600">{Math.round((results.durationMs || 0) / 1000)}s</div><div className="text-xs text-gray-500">Time Taken</div></>
-              }
-            </div>
-          </div>
-
-          <p className="text-xs text-center animate-pulse text-gray-500">
-            Redirecting to results...
-          </p>
-        </div>
-      )}
-
-      {/* ── Past searches ───────────────────────────────────────── */}
-      {!loading && !done && (history.length > 0 || historyLoading) && (
-        <div className="card card-body space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-gray-500" />
-              <h3 className="text-sm font-semibold text-gray-800">Past Searches</h3>
-            </div>
-            <button
-              onClick={() => navigate('/results')}
-              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              View all results <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-
-          {historyLoading ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="skeleton h-10 rounded-lg" />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {history.map(s => {
-                const ageDays = Math.floor((Date.now() - new Date(s.createdAt).getTime()) / 86400000);
-                return (
-                  <div
-                    key={s._id}
-                    onClick={() => navigate(`/results?searchId=${s._id}`)}
-                    className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/40 cursor-pointer transition-colors group"
+              {/* AI Suggestions */}
+              <AnimatePresence>
+                {showSugg && suggestions && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <SearchIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm font-medium text-gray-900 truncate">
-                          {s.query?.role}
-                        </span>
-                        {s.query?.location && (
-                          <span className="text-xs text-gray-500 truncate hidden sm:block">
-                            · {s.query.location}
-                          </span>
-                        )}
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" /> Based on your resume
+                        </p>
+                        <button onClick={() => setShowSugg(false)} className="text-indigo-300 hover:text-indigo-600">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5 ml-5.5">
-                        <span className="text-xs text-gray-500">
-                          {ageDays === 0 ? 'Today' : ageDays === 1 ? 'Yesterday' : `${ageDays} days ago`}
-                        </span>
-                        {s.totalFound > 0 && (
-                          <span className="text-xs text-green-600 font-medium">
-                            {s.totalFound} jobs
-                          </span>
-                        )}
-                        {s.status === 'running' && (
-                          <span className="badge badge-amber text-xs">running</span>
-                        )}
+                      {suggestions.detectedStacks?.length > 0 && (
+                        <p className="text-xs text-indigo-400">Detected: {suggestions.detectedStacks.join(', ')}</p>
+                      )}
+                      <div className="space-y-1.5">
+                        {suggestions.suggestions.map((s, i) => (
+                          <motion.button
+                            key={i}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.05 }}
+                            onClick={() => applySuggestion(s)}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white rounded-lg border border-indigo-100 hover:border-indigo-300 text-left transition-all group"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{s.label}</p>
+                              <p className="text-xs text-gray-400 truncate">{s.description}</p>
+                            </div>
+                            <ArrowRight className="w-3.5 h-3.5 text-indigo-300 group-hover:text-indigo-600 flex-shrink-0 transition-colors" />
+                          </motion.button>
+                        ))}
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 flex-shrink-0 transition-colors" />
-                  </div>
-                );
-              })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Platform picker */}
+              <AnimatePresence>
+                {showPlatforms && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="border border-gray-100 rounded-xl p-3 bg-gray-50/50">
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Platforms</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        {userPlatforms.map((platform) => {
+                          const isSelected = platforms.includes(platform.id);
+                          const locked     = platform.proOnly && !isPro;
+                          return (
+                            <button
+                              key={platform.id}
+                              onClick={() => !locked && togglePlatform(platform.id)}
+                              disabled={locked}
+                              className={cn(
+                                'flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-all text-sm',
+                                locked     ? 'opacity-40 cursor-not-allowed bg-gray-100 border-gray-200' :
+                                isSelected ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' :
+                                             'bg-white border-gray-200 text-gray-600 hover:border-blue-200'
+                              )}
+                            >
+                              <div className={cn(
+                                'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0',
+                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                              )}>
+                                {isSelected && (
+                                  <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className="truncate">{platform.name}</span>
+                              {locked && <span className="ml-auto text-[10px] bg-amber-100 text-amber-600 font-semibold px-1 py-0.5 rounded">Pro</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Cache banner */}
+              <AnimatePresence>
+                {cacheInfo && !loading && !done && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="flex items-center justify-between gap-3 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                      <p className="text-xs font-semibold text-emerald-800">
+                        {cacheInfo.jobCount} cached · {cacheInfo.ageDays === 0 ? 'today' : `${cacheInfo.ageDays}d ago`}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => handleSearch(false)} className="btn btn-sm bg-emerald-600 text-white hover:bg-emerald-700 text-xs px-2.5 py-1">
+                        <Sparkles className="w-3 h-3" /> Free
+                      </button>
+                      <button onClick={() => handleSearch(true)} className="btn btn-sm btn-secondary text-xs px-2.5 py-1">
+                        <RefreshCw className="w-3 h-3" /> Fresh
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Search button */}
+              <motion.button
+                onClick={() => handleSearch(false)}
+                disabled={loading}
+                whileHover={{ scale: loading ? 1 : 1.01 }}
+                whileTap={{ scale: loading ? 1 : 0.98 }}
+                className="w-full py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2"
+                style={{ background: loading ? '#93c5fd' : 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)' }}
+              >
+                {loading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Searching {platforms.length} platforms…</>
+                  : <><SearchIcon className="w-4 h-4" /> Search Jobs + Find HR Emails</>
+                }
+              </motion.button>
+
+              {!isPro && (
+                <p className="text-[11px] text-center text-gray-400">
+                  Free plan · HR emails for top 2 companies ·{' '}
+                  <a href="/billing" className="text-blue-600 font-semibold hover:underline">Upgrade</a>
+                </p>
+              )}
             </div>
+          </motion.div>
+
+          {/* Live progress */}
+          <AnimatePresence>
+            {loading && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3.5"
+                style={{ boxShadow: '0 4px 20px -4px rgba(0,0,0,0.07)' }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-blue-600 animate-pulse" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">Scanning platforms…</p>
+                    <p className="text-xs text-gray-400">Takes 15–30 seconds</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {userPlatforms.filter(p => platforms.includes(p.id)).map((platform, i) => {
+                    const p = progress[platform.id];
+                    const status = !p ? 'waiting' : p.status === 'done' ? 'done' : p.status === 'error' ? 'error' : 'running';
+                    return (
+                      <motion.div
+                        key={platform.id}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.04 }}
+                        className="flex items-center gap-3"
+                      >
+                        <span className={cn('w-2 h-2 rounded-full flex-shrink-0',
+                          status === 'done'    ? 'bg-emerald-500' :
+                          status === 'error'   ? 'bg-red-400' :
+                          status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-gray-200'
+                        )} />
+                        <span className="text-sm text-gray-700 flex-1">{platform.name}</span>
+                        <span className={cn('text-xs font-medium',
+                          status === 'done'  ? 'text-emerald-600' :
+                          status === 'error' ? 'text-red-400' : 'text-gray-300'
+                        )}>
+                          {status === 'done' ? `✓ ${p.found} jobs` : status === 'error' ? '✗ Failed' : status === 'running' ? 'Searching…' : '—'}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
+                  <Mail className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                  <p className="text-xs text-gray-400">
+                    {emailProgress
+                      ? emailProgress.status === 'started'
+                        ? `Finding HR emails for ${emailProgress.total} companies…`
+                        : `✓ Found emails for ${emailProgress.found} companies`
+                      : 'HR email search queued…'}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Done */}
+          <AnimatePresence>
+            {done && results && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="rounded-2xl overflow-hidden"
+                style={{
+                  background: results.fromCache
+                    ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)'
+                    : 'linear-gradient(135deg, #dbeafe, #e0e7ff)',
+                  boxShadow: '0 4px 24px -4px rgba(0,0,0,0.1)',
+                }}
+              >
+                <div className="p-5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', results.fromCache ? 'bg-emerald-500' : 'bg-blue-500')}>
+                      {results.fromCache ? <Sparkles className="w-5 h-5 text-white" /> : <CheckCircle className="w-5 h-5 text-white" />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-900">{results.fromCache ? 'Loaded from cache!' : 'Search complete!'}</p>
+                      <p className="text-xs text-gray-500">{results.fromCache ? '10 credits saved 🎉' : `${Math.round((results.durationMs || 0) / 1000)}s total`}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 mb-3">
+                    {[
+                      { label: 'Jobs',      value: doneJobs },
+                      { label: 'HR Emails', value: doneEmails },
+                      { label: results.fromCache ? 'Credits' : 'Platforms', value: results.fromCache ? 'FREE' : results.platformResults?.length },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="bg-white/70 backdrop-blur-sm rounded-xl p-3 text-center">
+                        <p className="text-xl font-black text-gray-800">{value}</p>
+                        <p className="text-[11px] text-gray-500">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <motion.p
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                    className="text-xs text-center text-gray-400"
+                  >
+                    Redirecting to results…
+                  </motion.p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* ── RIGHT: sidebar ───────────────────────────────────── */}
+        <div className="space-y-4">
+
+          {/* Feature tiles */}
+          <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-1 gap-2">
+            {[
+              { icon: SearchIcon, title: `${userPlatforms.length}+ Platforms`, desc: 'Searched at once',       color: 'blue'    },
+              { icon: Target,     title: 'AI Match Score',  desc: 'Ranked by fit',          color: 'violet'  },
+              { icon: Mail,       title: 'HR Emails',       desc: 'Auto-found contacts',    color: 'emerald' },
+              { icon: Zap,        title: 'Smart Cache',     desc: 'Free reuse for 30 days', color: 'amber'   },
+            ].map(({ icon: Icon, title, desc, color }) => (
+              <div key={title} className={cn(
+                'flex items-center gap-3 p-3 rounded-xl border',
+                color === 'blue'    ? 'bg-blue-50/60 border-blue-100' :
+                color === 'violet'  ? 'bg-violet-50/60 border-violet-100' :
+                color === 'emerald' ? 'bg-emerald-50/60 border-emerald-100' :
+                                      'bg-amber-50/60 border-amber-100'
+              )}>
+                <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+                  color === 'blue'    ? 'bg-blue-100' :
+                  color === 'violet'  ? 'bg-violet-100' :
+                  color === 'emerald' ? 'bg-emerald-100' : 'bg-amber-100'
+                )}>
+                  <Icon className={cn('w-4 h-4',
+                    color === 'blue'    ? 'text-blue-600' :
+                    color === 'violet'  ? 'text-violet-600' :
+                    color === 'emerald' ? 'text-emerald-600' : 'text-amber-600'
+                  )} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">{title}</p>
+                  <p className="text-xs text-gray-400">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+
+          {/* Recent searches */}
+          {!loading && !done && history.length > 0 && (
+            <motion.div
+              variants={fadeUp}
+              className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
+              style={{ boxShadow: '0 2px 12px -2px rgba(0,0,0,0.05)' }}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <History className="w-3.5 h-3.5 text-gray-400" />
+                  <p className="text-sm font-semibold text-gray-700">Recent</p>
+                </div>
+                <button onClick={() => navigate('/results')} className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-0.5">
+                  All <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {historyLoading ? (
+                <div className="p-3 space-y-2">
+                  {[...Array(3)].map((_, i) => <div key={i} className="skeleton h-8 rounded-lg" />)}
+                </div>
+              ) : (
+                <motion.div variants={stagger} initial="hidden" animate="show" className="divide-y divide-gray-50">
+                  {history.map(s => {
+                    const ageDays = Math.floor((Date.now() - new Date(s.createdAt)) / 86400000);
+                    return (
+                      <motion.div
+                        key={s._id}
+                        variants={itemFade}
+                        onClick={() => navigate(`/results?searchId=${s._id}`)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 cursor-pointer transition-colors group"
+                      >
+                        <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                          <SearchIcon className="w-3.5 h-3.5 text-blue-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{s.query?.role}</p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {s.query?.location} · {ageDays === 0 ? 'Today' : ageDays === 1 ? 'Yesterday' : `${ageDays}d ago`}
+                            {s.totalFound > 0 && <span className="ml-1.5 text-emerald-500 font-medium">{s.totalFound} jobs</span>}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 flex-shrink-0 transition-colors" />
+                      </motion.div>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </motion.div>
           )}
         </div>
-      )}
 
-      {/* ── Tips ────────────────────────────────────────────────── */}
-      {!loading && !done && !cacheInfo && (
-        <div className="card card-body bg-blue-50 border-blue-100">
-          <h3 className="text-sm font-semibold text-blue-800 mb-2">💡 How it works</h3>
-          <ul className="text-sm text-blue-700 space-y-1.5">
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 flex-shrink-0">1.</span>
-              Search runs across {PLATFORMS.filter(p => !p.adminOnly).length}+ job platforms simultaneously
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 flex-shrink-0">2.</span>
-              Jobs are scored by skill match, role match and work type from your profile
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 flex-shrink-0">3.</span>
-              HR emails auto-found for{' '}
-              <strong>{isPro ? 'all companies' : 'top 2 companies'}</strong>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-400 flex-shrink-0">4.</span>
-              Recent searches are cached for 30 days — no credits charged for repeat searches
-            </li>
-          </ul>
-        </div>
-      )}
-    </div>
+      </div>
+    </motion.div>
   );
 }

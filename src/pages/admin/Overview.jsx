@@ -146,7 +146,7 @@ export default function AdminOverview() {
       {/* User breakdown */}
       <div className="card card-body">
         <h2 className="font-semibold text-gray-900 mb-4">User Plan Breakdown</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { plan: 'Free',  count: stats?.users?.free  || 0, color: 'gray'   },
             { plan: 'Pro',   count: stats?.users?.pro   || 0, color: 'blue'   },

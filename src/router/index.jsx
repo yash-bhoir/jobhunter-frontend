@@ -23,6 +23,7 @@ import Credits        from '@pages/user/Credits';
 import Billing        from '@pages/user/Billing';
 import LinkedIn       from '@pages/user/LinkedIn';
 import MapSearch      from '@pages/user/MapSearch';
+import Insights       from '@pages/user/Insights';
 
 // Admin pages
 import AdminOverview  from '@pages/admin/Overview';
@@ -34,6 +35,7 @@ import AdminFeatures  from '@pages/admin/Features';
 import AdminAlerts    from '@pages/admin/Alerts';
 import AdminComms     from '@pages/admin/Comms';
 import AdminAuditLog  from '@pages/admin/AuditLog';
+import AdminErrorLogs from '@pages/admin/ErrorLogs';
 
 // Error pages
 import NotFound      from '@pages/errors/NotFound';
@@ -68,8 +70,9 @@ export default function AppRouter() {
         <Route path="/profile"          element={<Profile />} />
         <Route path="/credits"          element={<Credits />} />
         <Route path="/billing"          element={<Billing />} />
-        <Route path="/linkedin"          element={<LinkedIn />} />
-        <Route path="/map-search"        element={<MapSearch />} />
+        <Route path="/linkedin"         element={<LinkedIn />} />
+        <Route path="/map-search"       element={<MapSearch />} />
+        <Route path="/insights"         element={<Insights />} />
       </Route>
 
       {/* Admin routes */}
@@ -82,7 +85,8 @@ export default function AppRouter() {
         <Route path="/admin/features"  element={<AdminFeatures />} />
         <Route path="/admin/alerts"    element={<AdminAlerts />} />
         <Route path="/admin/comms"     element={<AdminComms />} />
-        <Route path="/admin/audit"     element={<AdminAuditLog />} />
+        <Route path="/admin/audit"       element={<AdminAuditLog />} />
+        <Route path="/admin/error-logs"  element={<AdminErrorLogs />} />
       </Route>
 
       <Route path="/"  element={<Navigate to="/dashboard" replace />} />
