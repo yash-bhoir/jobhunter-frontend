@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   Eye, EyeOff, Loader2, AlertCircle,
-  Briefcase, Search, Mail, TrendingUp, Zap,
+  Briefcase, Search, Mail, TrendingUp, Zap, ShieldCheck, ArrowLeft,
 } from 'lucide-react';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
+import { api } from '@utils/axios';
 
 const schema = z.object({
   email:    z.string().email('Valid email required'),
@@ -37,10 +38,145 @@ const stats = [
   { value: '10x',  label: 'Faster' },
 ];
 
+// ── Admin OTP screen ──────────────────────────────────────────────
+function AdminOtpScreen({ userId, onBack }) {
+  const [otp,     setOtp]     = useState(['', '', '', '', '', '']);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+  const refs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()];
+  const toast            = useToast();
+  const navigate         = useNavigate();
+  const { loginWithToken } = useAuth();
+
+  useEffect(() => { refs[0].current?.focus(); }, []);
+
+  const handleKey = (i, e) => {
+    if (e.key === 'Backspace') {
+      if (otp[i]) {
+        const next = [...otp]; next[i] = ''; setOtp(next);
+      } else if (i > 0) {
+        refs[i - 1].current?.focus();
+      }
+      return;
+    }
+    if (e.key === 'ArrowLeft' && i > 0)  { refs[i - 1].current?.focus(); return; }
+    if (e.key === 'ArrowRight' && i < 5) { refs[i + 1].current?.focus(); return; }
+  };
+
+  const handleChange = (i, val) => {
+    const digit = val.replace(/\D/g, '').slice(-1);
+    const next  = [...otp]; next[i] = digit; setOtp(next);
+    if (digit && i < 5) refs[i + 1].current?.focus();
+  };
+
+  const handlePaste = (e) => {
+    const text = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!text) return;
+    const next = text.split('').concat(Array(6).fill('')).slice(0, 6);
+    setOtp(next);
+    refs[Math.min(text.length, 5)].current?.focus();
+    e.preventDefault();
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const code = otp.join('');
+    if (code.length < 6) { setError('Enter all 6 digits'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await api.post('/auth/admin/verify-otp', { userId, otp: code });
+      if (res.data?.data?.accessToken) {
+        loginWithToken(res.data.data.accessToken, res.data.data.user);
+        toast.success('Welcome back, Admin!');
+        navigate('/admin');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invalid code. Please try again.');
+      setOtp(['', '', '', '', '', '']);
+      refs[0].current?.focus();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-elevated px-6 py-8 sm:px-8 animate-fade-in-up">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center">
+          <ShieldCheck className="w-5 h-5 text-blue-600" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Admin verification</h2>
+          <p className="text-xs text-gray-500">Check your email for the 6-digit code</p>
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-600 mb-6 bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
+        A verification code was sent to your registered email. It expires in <strong>10 minutes</strong>.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* OTP boxes */}
+        <div className="flex gap-2 justify-between" onPaste={handlePaste}>
+          {otp.map((digit, i) => (
+            <input
+              key={i}
+              ref={refs[i]}
+              type="text"
+              inputMode="numeric"
+              maxLength={1}
+              value={digit}
+              onChange={e => handleChange(i, e.target.value)}
+              onKeyDown={e => handleKey(i, e)}
+              className={`w-12 h-14 text-center text-xl font-bold rounded-xl border-2 transition-all duration-150
+                focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                ${error ? 'border-red-400 bg-red-50' : digit ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
+              `}
+            />
+          ))}
+        </div>
+
+        {error && (
+          <p className="flex items-center gap-1.5 text-sm text-red-600">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading || otp.join('').length < 6}
+          className="btn btn-primary w-full py-3 text-base"
+        >
+          {loading
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying...</>
+            : 'Verify & Sign in'
+          }
+        </button>
+      </form>
+
+      <div className="mt-5 flex items-center justify-between text-sm">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to login
+        </button>
+        {resent
+          ? <span className="text-emerald-600 font-medium">Code resent ✓</span>
+          : <span className="text-gray-400 text-xs">Didn&apos;t receive it? Check spam</span>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Main Login page ───────────────────────────────────────────────
 export default function Login() {
-  const [showPass, setShowPass] = useState(false);
-  const [loading,  setLoading]  = useState(false);
-  const { login }    = useAuth();
+  const [showPass,  setShowPass]  = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [otpState,  setOtpState]  = useState(null); // { userId }
+  const { login } = useAuth();
   const toast        = useToast();
   const navigate     = useNavigate();
   const [searchParams] = useSearchParams();
@@ -54,6 +190,12 @@ export default function Login() {
     setLoading(true);
     try {
       const result = await login(data);
+      // Admin gets OTP — backend returns { otpRequired: true, userId }
+      if (result?.otpRequired) {
+        setOtpState({ userId: result.userId });
+        toast.info('Verification code sent to your email');
+        return;
+      }
       toast.success('Welcome back!');
       if (['admin', 'super_admin'].includes(result.user?.role)) {
         navigate('/admin');
@@ -71,22 +213,48 @@ export default function Login() {
     window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`;
   };
 
+  // ── OTP screen ──
+  if (otpState) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-6 pt-10 pb-9">
+          <div className="absolute inset-0 opacity-[0.04]"
+            style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+          <div className="absolute -top-8 -right-8 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex items-center gap-2.5 mb-4">
+            <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
+              <Briefcase className="w-4.5 h-4.5 text-white" />
+            </div>
+            <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
+          </div>
+          <div className="relative z-10">
+            <h1 className="text-xl font-bold text-white">Two-step verification</h1>
+            <p className="mt-1 text-slate-400 text-sm">Admin portal requires email confirmation</p>
+          </div>
+        </div>
+
+        <div className="flex-1 flex items-start justify-center px-4 sm:px-8 -mt-4 pb-8">
+          <AdminOtpScreen
+            userId={otpState.userId}
+            onBack={() => setOtpState(null)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal login screen ──
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50">
 
       {/* ── Left brand panel (desktop only) ──────────────────────── */}
       <div className="hidden lg:flex lg:w-[52%] relative flex-col justify-between p-12 overflow-hidden
                       bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
-
-        {/* Background texture */}
         <div className="absolute inset-0 opacity-[0.03]"
           style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
-
-        {/* Glow blobs */}
         <div className="absolute top-1/4 -left-20 w-72 h-72 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-1/3 right-0 w-80 h-80 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Logo */}
         <div className="relative z-10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
@@ -96,7 +264,6 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Main copy */}
         <div className="relative z-10 space-y-8">
           <div>
             <h2 className="text-4xl font-bold text-white leading-tight">
@@ -107,8 +274,6 @@ export default function Login() {
               AI-powered search across every major platform, with recruiter contacts delivered automatically.
             </p>
           </div>
-
-          {/* Feature list */}
           <ul className="space-y-3.5">
             {features.map(({ icon: Icon, text }) => (
               <li key={text} className="flex items-start gap-3">
@@ -119,8 +284,6 @@ export default function Login() {
               </li>
             ))}
           </ul>
-
-          {/* Stats */}
           <div className="flex gap-6 pt-2">
             {stats.map(({ value, label }) => (
               <div key={label}>
@@ -131,23 +294,18 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Footer */}
         <p className="relative z-10 text-xs text-slate-600">
           © {new Date().getFullYear()} JobHunter · Built for serious job seekers
         </p>
       </div>
 
-      {/* ── Mobile hero banner (mobile only) ─────────────────────── */}
+      {/* ── Mobile hero banner ────────────────────────────────────── */}
       <div className="lg:hidden relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-6 pt-12 pb-10">
-        {/* Background texture */}
         <div className="absolute inset-0 opacity-[0.04]"
           style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
-
-        {/* Glow blobs */}
         <div className="absolute -top-10 -right-10 w-52 h-52 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 -left-10 w-44 h-44 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Logo + app name */}
         <div className="relative z-10 flex items-center gap-2.5 mb-6">
           <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
             <Briefcase className="w-4.5 h-4.5 text-white" />
@@ -155,7 +313,6 @@ export default function Login() {
           <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
         </div>
 
-        {/* Headline */}
         <div className="relative z-10 mb-6">
           <h1 className="text-2xl font-bold text-white leading-snug">
             Land your dream job<br />
@@ -166,7 +323,6 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Mini stats row */}
         <div className="relative z-10 flex gap-5">
           {stats.map(({ value, label }) => (
             <div key={label} className="flex flex-col">
@@ -183,20 +339,17 @@ export default function Login() {
                       px-4 sm:px-8 lg:p-10
                       -mt-4 lg:mt-0">
 
-        {/* Card wrapper — floats over hero on mobile */}
         <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-elevated
                         px-6 py-7 sm:px-8 sm:py-8
                         lg:shadow-none lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0
                         animate-fade-in-up
                         mb-6 lg:mb-0">
 
-          {/* Desktop heading (mobile heading is in hero) */}
           <div className="mb-6 lg:mb-8">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Welcome back</h2>
             <p className="text-sm text-gray-500 mt-1">Sign in to continue your job search</p>
           </div>
 
-          {/* OAuth error */}
           {urlError && (
             <div className="mb-5 p-3.5 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
@@ -204,7 +357,6 @@ export default function Login() {
             </div>
           )}
 
-          {/* Google button */}
           <button
             onClick={handleGoogleLogin}
             type="button"
@@ -216,7 +368,6 @@ export default function Login() {
             Continue with Google
           </button>
 
-          {/* Divider */}
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-100" />
@@ -226,9 +377,7 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-
             <div>
               <label className="label">Email address</label>
               <input
@@ -244,10 +393,7 @@ export default function Login() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="label mb-0">Password</label>
-                <Link
-                  to="/forgot-password"
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                >
+                <Link to="/forgot-password" className="text-xs text-blue-600 hover:text-blue-700 font-medium">
                   Forgot password?
                 </Link>
               </div>

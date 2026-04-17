@@ -25,9 +25,17 @@ export function AuthProvider({ children }) {
 
   const login = async (credentials) => {
     const { data } = await api.post('/auth/login', credentials);
+    // Admin 2-FA: backend returns { otpRequired: true, userId } — no token yet
+    if (data.data?.otpRequired) return data.data;
     localStorage.setItem('accessToken', data.data.accessToken);
     setUser(data.data.user);
     return data.data;
+  };
+
+  // Called after admin OTP is verified to hydrate auth state
+  const loginWithToken = (accessToken, userData) => {
+    localStorage.setItem('accessToken', accessToken);
+    setUser(userData);
   };
 
   const register = async (payload) => {
@@ -46,7 +54,7 @@ export function AuthProvider({ children }) {
   const isSuperAdmin = user?.role === 'super_admin';
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, isAdmin, isSuperAdmin, refetch: fetchMe }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithToken, register, logout, updateUser, isAdmin, isSuperAdmin, refetch: fetchMe }}>
       {children}
     </AuthContext.Provider>
   );
