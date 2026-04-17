@@ -32,9 +32,9 @@ const features = [
 ];
 
 const stats = [
-  { value: '21+',    label: 'Job Platforms' },
-  { value: '50K+',   label: 'Jobs Indexed' },
-  { value: '10x',    label: 'Faster Search' },
+  { value: '21+',  label: 'Platforms' },
+  { value: '50K+', label: 'Jobs' },
+  { value: '10x',  label: 'Faster' },
 ];
 
 export default function Login() {
@@ -72,9 +72,9 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50">
 
-      {/* ── Left brand panel (hidden on mobile) ──────────────────── */}
+      {/* ── Left brand panel (desktop only) ──────────────────────── */}
       <div className="hidden lg:flex lg:w-[52%] relative flex-col justify-between p-12 overflow-hidden
                       bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
 
@@ -137,21 +137,62 @@ export default function Login() {
         </p>
       </div>
 
-      {/* ── Right form panel ──────────────────────────────────────── */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-10 bg-white">
-        <div className="w-full max-w-[400px] animate-fade-in-up">
+      {/* ── Mobile hero banner (mobile only) ─────────────────────── */}
+      <div className="lg:hidden relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-6 pt-12 pb-10">
+        {/* Background texture */}
+        <div className="absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
 
-          {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center">
-              <Briefcase className="w-4.5 h-4.5 text-white" />
-            </div>
-            <span className="text-gray-900 font-bold text-lg">JobHunter</span>
+        {/* Glow blobs */}
+        <div className="absolute -top-10 -right-10 w-52 h-52 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 -left-10 w-44 h-44 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Logo + app name */}
+        <div className="relative z-10 flex items-center gap-2.5 mb-6">
+          <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
+            <Briefcase className="w-4.5 h-4.5 text-white" />
           </div>
+          <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
+        </div>
 
-          {/* Heading */}
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
+        {/* Headline */}
+        <div className="relative z-10 mb-6">
+          <h1 className="text-2xl font-bold text-white leading-snug">
+            Land your dream job<br />
+            <span className="text-blue-400">10x faster.</span>
+          </h1>
+          <p className="mt-2 text-slate-400 text-sm leading-relaxed">
+            AI-powered search across 21+ platforms with recruiter contacts.
+          </p>
+        </div>
+
+        {/* Mini stats row */}
+        <div className="relative z-10 flex gap-5">
+          {stats.map(({ value, label }) => (
+            <div key={label} className="flex flex-col">
+              <span className="text-xl font-bold text-white">{value}</span>
+              <span className="text-xs text-slate-500">{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Form panel ───────────────────────────────────────────── */}
+      <div className="flex-1 flex items-start lg:items-center justify-center
+                      bg-slate-50 lg:bg-white
+                      px-4 sm:px-8 lg:p-10
+                      -mt-4 lg:mt-0">
+
+        {/* Card wrapper — floats over hero on mobile */}
+        <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-elevated
+                        px-6 py-7 sm:px-8 sm:py-8
+                        lg:shadow-none lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0
+                        animate-fade-in-up
+                        mb-6 lg:mb-0">
+
+          {/* Desktop heading (mobile heading is in hero) */}
+          <div className="mb-6 lg:mb-8">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Welcome back</h2>
             <p className="text-sm text-gray-500 mt-1">Sign in to continue your job search</p>
           </div>
 
@@ -167,7 +208,7 @@ export default function Login() {
           <button
             onClick={handleGoogleLogin}
             type="button"
-            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border
                        border-gray-200 bg-white text-sm font-semibold text-gray-700 shadow-sm
                        hover:bg-gray-50 hover:border-gray-300 transition-all duration-150 active:scale-[0.99]"
           >
@@ -221,7 +262,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
                 >
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -232,7 +273,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="btn btn-primary w-full btn-lg mt-2"
+              className="btn btn-primary w-full py-3 text-base mt-1"
             >
               {loading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</>
@@ -241,7 +282,7 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-gray-500 mt-5">
             Don&apos;t have an account?{' '}
             <Link to="/register" className="text-blue-600 font-semibold hover:text-blue-700">
               Create one free
@@ -249,6 +290,7 @@ export default function Login() {
           </p>
         </div>
       </div>
+
     </div>
   );
 }
