@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Search, Briefcase, Users, Mail,
   User, CreditCard, Wallet, LogOut, X, Linkedin,
@@ -7,6 +8,7 @@ import {
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { cn }       from '@utils/helpers';
+import { api }      from '@utils/axios';
 
 const NAV_ITEMS = [
   { to: '/dashboard',  label: 'Dashboard',    icon: LayoutDashboard, color: 'blue'   },
@@ -35,7 +37,7 @@ const ICON_COLORS = {
   slate:   { bg: 'bg-slate-100',  icon: 'text-slate-600'   },
 };
 
-function NavItem({ to, label, icon: Icon, color, expanded }) {
+function NavItem({ to, label, icon: Icon, color, expanded, badge }) {
   const c = ICON_COLORS[color] || ICON_COLORS.blue;
   return (
     <NavLink
@@ -52,15 +54,25 @@ function NavItem({ to, label, icon: Icon, color, expanded }) {
       {({ isActive }) => (
         <>
           <span className={cn(
-            'flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0 transition-all duration-150',
+            'flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0 transition-all duration-150 relative',
             isActive ? `${c.bg} ${c.icon}` : 'text-gray-400 group-hover:text-gray-600'
           )}>
             <Icon className="w-4 h-4" />
+            {badge > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                {badge > 99 ? '99+' : badge}
+              </span>
+            )}
           </span>
           {expanded && (
             <span className="flex-1 truncate">{label}</span>
           )}
-          {expanded && isActive && (
+          {expanded && badge > 0 && (
+            <span className="ml-auto px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
+          {expanded && isActive && !badge && (
             <ChevronRight className="w-3.5 h-3.5 opacity-40 flex-shrink-0" />
           )}
           {/* Tooltip for collapsed state */}
@@ -81,6 +93,21 @@ export default function Sidebar({ open, onClose }) {
   const { user, logout, isAdmin } = useAuth();
   const toast    = useToast();
   const navigate = useNavigate();
+  const [linkedinUnread, setLinkedinUnread] = useState(0);
+
+  // Poll for unread LinkedIn jobs every 5 minutes
+  useEffect(() => {
+    let cancelled = false;
+    const fetch = async () => {
+      try {
+        const { data } = await api.get('/linkedin/unread-count');
+        if (!cancelled) setLinkedinUnread(data.data?.count || 0);
+      } catch { /* silent */ }
+    };
+    fetch();
+    const interval = setInterval(fetch, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -136,7 +163,12 @@ export default function Sidebar({ open, onClose }) {
             </p>
           )}
           {NAV_ITEMS.map(item => (
-            <NavItem key={item.to} {...item} expanded={open} />
+            <NavItem
+              key={item.to}
+              {...item}
+              expanded={open}
+              badge={item.to === '/linkedin' ? linkedinUnread : 0}
+            />
           ))}
 
           {open && <div className="pt-3 pb-2"><div className="h-px bg-gray-100" /></div>}

@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Linkedin, Plus, Search, Mail, Users, ExternalLink,
   Loader2, Trash2, Copy, Check, RefreshCw, Zap,
-  MapPin, Building, Star, AlertCircle, X, ChevronRight
+  MapPin, Building, Star, AlertCircle, X, ChevronRight,
+  Bell, BellOff,
 } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useAuth }  from '@hooks/useAuth';
@@ -61,6 +62,26 @@ export default function LinkedIn() {
   const [form, setForm] = useState({
     title: '', company: '', location: '', url: '', description: '', salary: '', remote: false,
   });
+
+  const [alertSettings,      setAlertSettings]      = useState({ enabled: true, frequency: 'daily' });
+  const [alertSaving,        setAlertSaving]        = useState(false);
+
+  useEffect(() => {
+    api.get('/linkedin/alerts/settings')
+      .then(({ data }) => setAlertSettings(data.data))
+      .catch(() => {});
+  }, []);
+
+  const saveAlertSettings = async (patch) => {
+    const next = { ...alertSettings, ...patch };
+    setAlertSettings(next);
+    setAlertSaving(true);
+    try {
+      await api.patch('/linkedin/alerts/settings', patch);
+      toast.success('Alert settings saved');
+    } catch { toast.error('Failed to save'); }
+    finally { setAlertSaving(false); }
+  };
 
   useEffect(() => { fetchJobs(); }, [statusFilter]);
 
@@ -226,6 +247,49 @@ export default function LinkedIn() {
         </p>
       </motion.div>
 
+      {/* Alert notification settings */}
+      <motion.div variants={fadeUp} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            {alertSettings.enabled
+              ? <Bell className="w-4 h-4 text-blue-600" />
+              : <BellOff className="w-4 h-4 text-gray-400" />}
+            <p className="font-semibold text-gray-900 text-sm">Email Job Alerts</p>
+            <span className="text-xs text-gray-400">(digest email when new jobs are found)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={alertSettings.frequency}
+              disabled={!alertSettings.enabled || alertSaving}
+              onChange={e => saveAlertSettings({ frequency: e.target.value })}
+              className="input text-sm w-28 disabled:opacity-40"
+            >
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
+            <button
+              onClick={() => saveAlertSettings({ enabled: !alertSettings.enabled })}
+              disabled={alertSaving}
+              className={cn(
+                'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none cursor-pointer disabled:opacity-50',
+                alertSettings.enabled ? 'bg-blue-600' : 'bg-gray-200'
+              )}
+            >
+              <span className={cn(
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                alertSettings.enabled ? 'translate-x-5' : 'translate-x-0'
+              )} />
+            </button>
+          </div>
+        </div>
+        {!isPro && (
+          <p className="text-xs text-amber-600 flex items-center gap-1 mt-2">
+            <AlertCircle className="w-3 h-3" /> Auto-alerts run for Pro users only — upgrade to enable
+          </p>
+        )}
+      </motion.div>
+
       {/* Gmail section */}
       <motion.div variants={fadeUp}>
         <GmailAlertSection onFetched={fetchJobs} />
@@ -362,7 +426,9 @@ export default function LinkedIn() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-xs text-gray-400">{job.source?.replace(/_/g, ' ')}</span>
+                          <span className={`text-xs font-medium ${job.source === 'career_page' ? 'text-violet-500' : 'text-gray-400'}`}>
+                            {job.source === 'career_page' ? '🏢 Career Page' : job.source?.replace(/_/g, ' ')}
+                          </span>
                           {job.salary && <span className="text-xs text-gray-400">· {job.salary}</span>}
                           <span className="text-xs text-gray-300">· {fAgo(job.createdAt)}</span>
                         </div>
