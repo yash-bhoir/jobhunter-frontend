@@ -207,7 +207,10 @@ export default function Search() {
     setLoading(true); setDone(false); setProgress({}); setEmailProgress(null); setResults(null); setCacheInfo(null);
     dispatch(startSearch(null));
     try {
-      const { data } = await api.post('/search/run', { role: role.trim(), location: location.trim() || 'India', workType, platforms, force, ...(radius > 0 && { radius }) });
+      const { data } = await api.post('/search/run',
+        { role: role.trim(), location: location.trim() || 'India', workType, platforms, force, ...(radius > 0 && { radius }) },
+        { timeout: 90000 }  // 90s — search can take up to 40-50s across all platforms
+      );
       setResults(data.data);
       dispatch(setJobs(data.data.jobs || []));
       dispatch(completeSearch()); setDone(true);
@@ -216,8 +219,15 @@ export default function Search() {
       api.get('/search/history?limit=6').then(({ data: h }) => setHistory(h.data || [])).catch(() => {});
       setTimeout(() => navigate(`/results${data.data.searchId ? `?searchId=${data.data.searchId}` : ''}`), 2000);
     } catch (err) {
-      dispatch(setSearchError(err.response?.data?.message || 'Search failed'));
-      toast.error(err.response?.data?.message || 'Search failed');
+      // Timeout means search is still running in background — redirect to results
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        toast('Search is taking longer than usual — checking results…');
+        dispatch(completeSearch());
+        setTimeout(() => navigate('/results'), 3000);
+      } else {
+        dispatch(setSearchError(err.response?.data?.message || 'Search failed'));
+        toast.error(err.response?.data?.message || 'Search failed');
+      }
     } finally { setLoading(false); }
   };
 
