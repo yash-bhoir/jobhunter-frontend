@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Search, Briefcase, Users, Mail,
   User, CreditCard, Wallet, LogOut, Briefcase as Logo, X,
-  ChevronLeft,
+  ChevronLeft, Map,
 } from 'lucide-react';
 import { useAuth } from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
@@ -10,15 +10,16 @@ import { cn } from '@utils/helpers';
 import { Linkedin } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { to: '/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
-  { to: '/search',     label: 'Job Search',  icon: Search },
-  { to: '/results',    label: 'Results',     icon: Briefcase },
-  { to: '/recruiters', label: 'Recruiters',  icon: Users },
-  { to: '/outreach',   label: 'Outreach',    icon: Mail },
-  { to: '/profile',    label: 'Profile',     icon: User },
-  { to: '/credits',    label: 'Credits',     icon: Wallet },
-  { to: '/linkedin', label: 'LinkedIn Jobs', icon: Linkedin },
-  { to: '/billing',    label: 'Billing',     icon: CreditCard },
+  { to: '/dashboard',  label: 'Dashboard',    icon: LayoutDashboard },
+  { to: '/search',     label: 'Job Search',   icon: Search },
+  { to: '/map-search', label: 'Map Search',   icon: Map },
+  { to: '/results',    label: 'Results',      icon: Briefcase },
+  { to: '/recruiters', label: 'Recruiters',   icon: Users },
+  { to: '/outreach',   label: 'Outreach',     icon: Mail },
+  { to: '/profile',    label: 'Profile',      icon: User },
+  { to: '/credits',    label: 'Credits',      icon: Wallet },
+  { to: '/linkedin',   label: 'LinkedIn Jobs', icon: Linkedin },
+  { to: '/billing',    label: 'Billing',      icon: CreditCard },
 ];
 
 export default function Sidebar({ open, onClose }) {

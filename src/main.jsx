@@ -6,6 +6,7 @@ import App from './App';
 import { store } from './store';
 import ErrorBoundary from './components/ErrorBoundary';
 import './styles/globals.css';
+import 'leaflet/dist/leaflet.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
