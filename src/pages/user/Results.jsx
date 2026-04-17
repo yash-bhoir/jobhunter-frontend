@@ -180,17 +180,26 @@ export default function Results() {
       const result = data.data;
       setHrLookup(p => ({ ...p, [jobId]: { loading: false, result } }));
       const top = result.emails?.[0];
+      // Always patch link fields regardless of whether email was found
+      const patch = {
+        ...(result.careerPageUrl  && { careerPageUrl:  result.careerPageUrl }),
+        ...(result.linkedinUrl    && { linkedinUrl:    result.linkedinUrl }),
+        ...(result.employeeSearch && { employeeSearch: result.employeeSearch }),
+      };
       if (top?.email) {
-        const patch = {
+        Object.assign(patch, {
           recruiterEmail:       top.email,
           recruiterName:        top.name       || null,
           recruiterConfidence:  top.confidence || null,
           recruiterEmailStatus: top.status     || 'unknown',
           allRecruiterContacts: result.emails  || [],
-        };
+        });
+      }
+      if (Object.keys(patch).length > 0) {
         setJobs(prev => prev.map(j => j._id === jobId ? { ...j, ...patch } : j));
         setSelected(prev => prev?._id === jobId ? { ...prev, ...patch } : prev);
       }
+      if (!top?.email) toast.info('No verified email found — career links updated');
     } catch (err) {
       const msg = err.response?.data?.message || 'Lookup failed';
       setHrLookup(p => ({ ...p, [jobId]: { loading: false, error: msg } }));
@@ -218,18 +227,21 @@ export default function Results() {
     }
   };
 
-  // Fetch fresh contacts (employees + HR) from DB when a job is selected
+  // Fetch fresh contacts (employees + HR + career links) from DB when a job is selected
   const fetchContacts = async (jobId) => {
     try {
       const { data } = await api.get(`/jobs/${jobId}/contacts`);
-      const { hrContacts, employees } = data.data;
+      const { hrContacts, employees, careerPageUrl, linkedinUrl, employeeSearch } = data.data;
       const patch = {};
-      if (employees?.length > 0) patch.employees = employees;
+      if (employees?.length > 0)  patch.employees = employees;
       if (hrContacts?.length > 0) {
         patch.allRecruiterContacts = hrContacts;
         patch.recruiterEmail = hrContacts[0]?.email || undefined;
         patch.recruiterName  = hrContacts[0]?.name  || undefined;
       }
+      if (careerPageUrl)  patch.careerPageUrl  = careerPageUrl;
+      if (linkedinUrl)    patch.linkedinUrl    = linkedinUrl;
+      if (employeeSearch) patch.employeeSearch = employeeSearch;
       if (Object.keys(patch).length > 0) {
         setJobs(prev => prev.map(j => j._id === jobId ? { ...j, ...patch } : j));
         setSelected(prev => prev?._id === jobId ? { ...prev, ...patch } : prev);
@@ -715,54 +727,90 @@ export default function Results() {
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
 
                     {/* ── HR Emails ───────────────────────────── */}
-                    <ContactsSection
-                      title="HR Emails"
-                      icon={Mail}
-                      iconColor="text-blue-500"
-                      items={
-                        selected.allRecruiterContacts?.length > 0
-                          ? selected.allRecruiterContacts
-                          : selected.recruiterEmail
-                            ? [{ email: selected.recruiterEmail, name: selected.recruiterName, confidence: selected.recruiterConfidence, source: selected.recruiterSource, status: selected.recruiterEmailStatus || 'unknown', linkedin: selected.recruiterLinkedIn }]
-                            : []
-                      }
-                      emptyText="No HR emails found yet"
-                      onOutreach={(contacts) => {
-                        const params = new URLSearchParams({
-                          company:  selected.company,
-                          jobTitle: selected.title,
-                          to:       contacts.map(c => c.email).join(','),
-                          ...(selected.searchId ? { searchId: selected.searchId } : {}),
-                        });
-                        window.location.href = `/outreach-manager?${params}`;
-                      }}
-                    />
+                    {(() => {
+                      const hrEmails = selected.allRecruiterContacts?.length > 0
+                        ? selected.allRecruiterContacts
+                        : selected.recruiterEmail
+                          ? [{ email: selected.recruiterEmail, name: selected.recruiterName, confidence: selected.recruiterConfidence, source: selected.recruiterSource, status: selected.recruiterEmailStatus || 'unknown', linkedin: selected.recruiterLinkedIn }]
+                          : [];
+                      return hrEmails.length > 0 ? (
+                        <ContactsSection
+                          title="HR Emails"
+                          icon={Mail}
+                          iconColor="text-blue-500"
+                          items={hrEmails}
+                          onOutreach={(contacts) => {
+                            const params = new URLSearchParams({
+                              company: selected.company, jobTitle: selected.title,
+                              to: contacts.map(c => c.email).join(','),
+                              ...(selected.searchId ? { searchId: selected.searchId } : {}),
+                            });
+                            window.location.href = `/outreach-manager?${params}`;
+                          }}
+                        />
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-gray-200 p-4 space-y-3">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-blue-500" /> HR Emails
+                          </p>
+                          <p className="text-xs text-gray-400">No verified emails found yet. Use these to reach out directly:</p>
+                          <div className="space-y-2">
+                            {selected.careerPageUrl && (
+                              <a href={selected.careerPageUrl} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors">
+                                <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0" /> Visit Careers Page
+                              </a>
+                            )}
+                            {selected.linkedinUrl && (
+                              <a href={selected.linkedinUrl} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors">
+                                <Linkedin className="w-3.5 h-3.5 flex-shrink-0" /> Company LinkedIn
+                              </a>
+                            )}
+                            {selected.employeeSearch && (
+                              <a href={selected.employeeSearch} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-2 p-2.5 bg-violet-50 border border-violet-100 rounded-xl text-xs font-semibold text-violet-700 hover:bg-violet-100 transition-colors">
+                                <Users className="w-3.5 h-3.5 flex-shrink-0" /> Find HR on LinkedIn
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* ── Employees ───────────────────────────── */}
-                    <ContactsSection
-                      title="Employees"
-                      icon={Users}
-                      iconColor="text-violet-500"
-                      items={(selected.employees || []).map(e => ({
-                        email:      e.email,
-                        name:       e.name,
-                        title:      e.title,
-                        linkedin:   e.linkedin,
-                        source:     e.source || 'apollo',
-                        status:     e.email ? 'verified' : 'unknown',
-                        confidence: e.email ? 85 : 0,
-                      }))}
-                      emptyText="No employees found yet"
-                      onOutreach={(contacts) => {
-                        const params = new URLSearchParams({
-                          company:  selected.company,
-                          jobTitle: selected.title,
-                          to:       contacts.filter(c => c.email).map(c => c.email).join(','),
-                          ...(selected.searchId ? { searchId: selected.searchId } : {}),
-                        });
-                        window.location.href = `/outreach-manager?${params}`;
-                      }}
-                    />
+                    {(() => {
+                      const employees = (selected.employees || []).map(e => ({
+                        email: e.email, name: e.name, title: e.title,
+                        linkedin: e.linkedin, source: e.source || 'apollo',
+                        status: e.email ? 'verified' : 'unknown', confidence: e.email ? 85 : 0,
+                      }));
+                      return employees.length > 0 ? (
+                        <ContactsSection
+                          title="Employees"
+                          icon={Users}
+                          iconColor="text-violet-500"
+                          items={employees}
+                          onOutreach={(contacts) => {
+                            const params = new URLSearchParams({
+                              company: selected.company, jobTitle: selected.title,
+                              to: contacts.filter(c => c.email).map(c => c.email).join(','),
+                              ...(selected.searchId ? { searchId: selected.searchId } : {}),
+                            });
+                            window.location.href = `/outreach-manager?${params}`;
+                          }}
+                        />
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-gray-200 p-4 space-y-2">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-violet-500" /> Employees
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {isPro ? 'Click "Find Employees" below to search for people at this company.' : 'Upgrade to Pro to search for employees at this company.'}
+                          </p>
+                        </div>
+                      );
+                    })()}
 
                     {/* ── Action buttons ───────────────────────── */}
                     <div className="space-y-2 pt-1">
