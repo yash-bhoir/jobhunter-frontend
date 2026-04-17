@@ -271,177 +271,157 @@ export default function MapSearch() {
     : null;
 
   return (
-    <div className="flex flex-col -m-6 overflow-hidden" style={{ height: 'calc(100vh - 4rem)' }}>
+    /* Negative margin cancels the main content padding; height fills viewport minus header+bottom-nav */
+    <div className="flex flex-col overflow-hidden map-search-container -m-4 sm:-m-6">
 
-      {/* ── Top bar ────────────────────────────────────────────── */}
+      {/* ── Top bar ─────────────────────────────────────────────── */}
       <div
-        className="flex items-center gap-2.5 px-4 py-2.5 bg-white border-b border-gray-200 flex-shrink-0 shadow-sm flex-wrap"
+        className="bg-white border-b border-gray-200 flex-shrink-0 shadow-sm px-3 sm:px-4 py-2 sm:py-2.5"
         style={{ position: 'relative', zIndex: 1000 }}
       >
+        {/* Row 1 — inputs */}
+        <div className="flex items-center gap-2 mb-2 sm:mb-0 sm:inline-flex sm:w-auto w-full">
+          {/* Job title */}
+          <div className="relative flex-1 sm:flex-none">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            <input
+              value={titleQuery}
+              onChange={e => setTitleQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && geocodeAndSearch()}
+              placeholder="Job title..."
+              className="input pl-9 h-9 text-sm w-full sm:w-44 md:w-52"
+            />
+          </div>
 
-        {/* Job title search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-          <input
-            value={titleQuery}
-            onChange={e => setTitleQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && geocodeAndSearch()}
-            placeholder="Job title, skills..."
-            className="input pl-9 h-9 text-sm w-52"
+          {/* Location input wrapper */}
+          <div className="relative flex-1 sm:flex-none">
+            <div className="flex items-center gap-1">
+              <div className="relative flex-1 sm:flex-none">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-500 pointer-events-none" />
+                {sugLoading && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 animate-spin pointer-events-none" />
+                )}
+                <input
+                  ref={locationInputRef}
+                  value={locationName}
+                  onChange={e => { setLocationName(e.target.value); setShowHistory(false); }}
+                  onFocus={() => {
+                    if (suggestions.length > 0) setShowSuggestions(true);
+                    else if (history.length > 0 && locationName.trim().length < 2) setShowHistory(true);
+                  }}
+                  onBlur={() => setTimeout(() => { setShowSuggestions(false); setShowHistory(false); }, 180)}
+                  onKeyDown={e => e.key === 'Enter' && geocodeAndSearch()}
+                  placeholder="Location..."
+                  className="input pl-9 pr-2 h-9 text-sm w-full sm:w-36 md:w-44"
+                />
+              </div>
+              <button
+                onClick={handleGpsClick}
+                disabled={locatingGps}
+                title="Use my current location"
+                className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50"
+              >
+                {locatingGps ? <Loader2 className="w-4 h-4 animate-spin" /> : <LocateFixed className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Dropdown */}
+            {dropdownMode && (
+              <div className="absolute top-full left-0 mt-1 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-xl border border-gray-200 shadow-xl z-[1200] overflow-hidden">
+                {dropdownMode === 'suggestions' && (
+                  <>
+                    <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-1.5">
+                      <Navigation className="w-3 h-3 text-blue-400" />
+                      <span className="text-xs font-semibold text-gray-500">Location suggestions</span>
+                    </div>
+                    {suggestions.map((s, i) => (
+                      <button key={i} onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors flex items-start gap-2.5 border-b border-gray-50 last:border-0">
+                        <MapPin className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-gray-800 truncate">{s.short}</p>
+                          <p className="text-xs text-gray-400 truncate leading-snug">{s.full}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {dropdownMode === 'history' && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" /> Recent searches
+                      </span>
+                      <button onMouseDown={e => { e.preventDefault(); clearHistory(); setHistory([]); setShowHistory(false); }}
+                        className="text-xs text-red-500 hover:text-red-700 transition-colors">Clear</button>
+                    </div>
+                    <button onMouseDown={e => { e.preventDefault(); handleGpsClick(); setShowHistory(false); }}
+                      className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors flex items-center gap-2.5 border-b border-gray-100">
+                      <LocateFixed className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                      <span className="text-xs font-semibold text-blue-600">Use my current location</span>
+                    </button>
+                    {history.map((entry, i) => (
+                      <button key={i} onMouseDown={e => { e.preventDefault(); restoreHistory(entry); }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2.5">
+                        <Clock className="w-3 h-3 text-gray-300 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-800 truncate">{entry.location}</p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {[entry.title && `"${entry.title}"`, entry.radius && `${entry.radius} km`].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2 on mobile / inline on desktop */}
+        <div className="flex items-center gap-2 sm:inline-flex sm:ml-2">
+          <RadiusControl value={radius} onChange={setRadius} />
+          <button
+            onClick={geocodeAndSearch}
+            disabled={loading}
+            className="btn btn-primary btn-sm gap-1.5 flex-shrink-0"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            <span className="hidden xs:inline">Search Jobs</span>
+            <span className="xs:hidden">Search</span>
+          </button>
+          {hasSearched && !loading && (
+            <span className="text-xs text-gray-500 flex-shrink-0 hidden sm:inline">
+              {jobs.length > 0
+                ? <><strong className="text-blue-600">{jobs.length}</strong> found</>
+                : 'No jobs'
+              }
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Body ─────────────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Job list — hidden on mobile, visible on lg+ */}
+        <div className="hidden lg:flex flex-shrink-0">
+          <JobListPanel
+            jobs={jobs}
+            loading={loading}
+            error={error}
+            hasSearched={hasSearched}
+            selectedJobId={selectedJobId}
+            onJobClick={handleJobCardClick}
+            open={panelOpen}
+            onToggle={() => setPanelOpen(p => !p)}
+            savedIds={savedIds}
+            onSaveToggle={handleSaveToggle}
+            savedJobDocIds={savedJobDocIds}
           />
         </div>
 
-        {/* ── Location input + GPS button + dropdown ─────────── */}
-        <div className="relative">
-          <div className="flex items-center gap-1">
-            {/* Location text input */}
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-500 pointer-events-none" />
-              {sugLoading && (
-                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 animate-spin pointer-events-none" />
-              )}
-              <input
-                ref={locationInputRef}
-                value={locationName}
-                onChange={e => { setLocationName(e.target.value); setShowHistory(false); }}
-                onFocus={() => {
-                  if (suggestions.length > 0) setShowSuggestions(true);
-                  else if (history.length > 0 && locationName.trim().length < 2) setShowHistory(true);
-                }}
-                onBlur={() => setTimeout(() => { setShowSuggestions(false); setShowHistory(false); }, 180)}
-                onKeyDown={e => e.key === 'Enter' && geocodeAndSearch()}
-                placeholder="City or location..."
-                className="input pl-9 pr-8 h-9 text-sm w-44"
-              />
-            </div>
-
-            {/* GPS / current location button */}
-            <button
-              onClick={handleGpsClick}
-              disabled={locatingGps}
-              title="Use my current location"
-              className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50"
-            >
-              {locatingGps
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <LocateFixed className="w-4 h-4" />
-              }
-            </button>
-          </div>
-
-          {/* ── Dropdown — suggestions or history ─────────────── */}
-          {dropdownMode && (
-            <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl border border-gray-200 shadow-xl z-[1200] overflow-hidden">
-
-              {/* Suggestions */}
-              {dropdownMode === 'suggestions' && (
-                <>
-                  <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-1.5">
-                    <Navigation className="w-3 h-3 text-blue-400" />
-                    <span className="text-xs font-semibold text-gray-500">Location suggestions</span>
-                  </div>
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={i}
-                      onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
-                      className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors flex items-start gap-2.5 border-b border-gray-50 last:border-0"
-                    >
-                      <MapPin className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-gray-800 truncate">{s.short}</p>
-                        <p className="text-xs text-gray-400 truncate leading-snug">{s.full}</p>
-                      </div>
-                    </button>
-                  ))}
-                </>
-              )}
-
-              {/* History */}
-              {dropdownMode === 'history' && (
-                <>
-                  <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-                    <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                      <Clock className="w-3 h-3" /> Recent searches
-                    </span>
-                    <button
-                      onMouseDown={e => { e.preventDefault(); clearHistory(); setHistory([]); setShowHistory(false); }}
-                      className="text-xs text-red-500 hover:text-red-700 transition-colors"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  {/* "Use my location" row inside history dropdown */}
-                  <button
-                    onMouseDown={e => { e.preventDefault(); handleGpsClick(); setShowHistory(false); }}
-                    className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors flex items-center gap-2.5 border-b border-gray-100"
-                  >
-                    <LocateFixed className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                    <span className="text-xs font-semibold text-blue-600">Use my current location</span>
-                  </button>
-                  {history.map((entry, i) => (
-                    <button
-                      key={i}
-                      onMouseDown={e => { e.preventDefault(); restoreHistory(entry); }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2.5"
-                    >
-                      <Clock className="w-3 h-3 text-gray-300 flex-shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-gray-800 truncate">{entry.location}</p>
-                        <p className="text-xs text-gray-400 truncate">
-                          {[entry.title && `"${entry.title}"`, entry.radius && `${entry.radius} km`].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Radius */}
-        <RadiusControl value={radius} onChange={setRadius} />
-
-        {/* Search button */}
-        <button
-          onClick={geocodeAndSearch}
-          disabled={loading}
-          className="btn btn-primary btn-sm gap-1.5 flex-shrink-0"
-        >
-          {loading
-            ? <Loader2 className="w-4 h-4 animate-spin" />
-            : <Search className="w-4 h-4" />
-          }
-          Search Jobs
-        </button>
-
-        {/* Result count */}
-        {hasSearched && !loading && (
-          <span className="text-xs text-gray-500 flex-shrink-0 ml-1">
-            {jobs.length > 0
-              ? <><strong className="text-blue-600">{jobs.length}</strong> job{jobs.length !== 1 ? 's' : ''} found</>
-              : 'No jobs found'
-            }
-          </span>
-        )}
-      </div>
-
-      {/* ── Body ─────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
-        <JobListPanel
-          jobs={jobs}
-          loading={loading}
-          error={error}
-          hasSearched={hasSearched}
-          selectedJobId={selectedJobId}
-          onJobClick={handleJobCardClick}
-          open={panelOpen}
-          onToggle={() => setPanelOpen(p => !p)}
-          savedIds={savedIds}
-          onSaveToggle={handleSaveToggle}
-          savedJobDocIds={savedJobDocIds}
-        />
-
+        {/* Map */}
         <div className="flex-1 relative" style={{ zIndex: 0 }}>
           <MapView
             center={center}
@@ -454,10 +434,17 @@ export default function MapSearch() {
             savedIds={savedIds}
             onSaveToggle={handleSaveToggle}
           />
+          {/* Mobile job count badge */}
+          {hasSearched && !loading && jobs.length > 0 && (
+            <div className="lg:hidden absolute top-2 right-2 z-[500] bg-white/90 backdrop-blur-sm border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
+              <span className="text-xs font-semibold text-blue-600">{jobs.length} jobs</span>
+              <span className="text-xs text-gray-500"> · tap markers</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Job detail sheet ──────────────────────────────────── */}
+      {/* ── Job detail sheet ─────────────────────────────────────── */}
       {detailJob && (
         <GeoJobDetailSheet
           job={detailJob}

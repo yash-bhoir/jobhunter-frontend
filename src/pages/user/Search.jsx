@@ -376,13 +376,13 @@ export default function Search() {
               </AnimatePresence>
 
               {/* Work type pills */}
-              <div className="flex gap-2">
+              <div className="flex gap-1.5 sm:gap-2">
                 {WORK_TYPES.map(({ value, label }) => (
                   <button
                     key={value}
                     onClick={() => setWorkType(value)}
                     className={cn(
-                      'flex-1 py-2 text-xs font-semibold rounded-lg border transition-all duration-150',
+                      'flex-1 py-2.5 text-xs font-semibold rounded-lg border transition-all duration-150 min-h-[40px]',
                       workType === value
                         ? 'bg-blue-600 text-white border-blue-600'
                         : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'

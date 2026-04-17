@@ -9,15 +9,18 @@ import { useNavigate } from 'react-router-dom';
 import { cn }         from '@utils/helpers';
 
 const PAGE_TITLES = {
-  '/dashboard':  'Dashboard',
-  '/search':     'Job Search',
-  '/results':    'Results',
-  '/recruiters': 'Recruiters',
-  '/outreach':   'Outreach',
-  '/profile':    'Profile',
-  '/credits':    'Credits',
-  '/billing':    'Billing',
-  '/linkedin':   'LinkedIn Jobs',
+  '/dashboard':      'Dashboard',
+  '/search':         'Job Search',
+  '/results':        'Results',
+  '/recruiters':     'Recruiters',
+  '/outreach':       'Outreach',
+  '/outreach-manager': 'Outreach Manager',
+  '/profile':        'Profile',
+  '/credits':        'Credits',
+  '/billing':        'Billing',
+  '/linkedin':       'LinkedIn Jobs',
+  '/map-search':     'Map Search',
+  '/insights':       'Insights',
 };
 
 export default function Header({ onMenuClick }) {

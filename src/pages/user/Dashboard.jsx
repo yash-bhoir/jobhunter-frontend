@@ -101,22 +101,22 @@ export default function Dashboard() {
           <div className="absolute top-6 right-1/3 w-24 h-24 rounded-full bg-white/5 blur-lg" />
         </div>
         <div className="relative flex items-start justify-between gap-4">
-          <div>
-            <p className="text-blue-200 text-sm font-medium mb-1">Good {getTimeOfDay()} 👋</p>
-            <h1 className="text-3xl font-black tracking-tight">Welcome back, {firstName}!</h1>
-            <p className="text-blue-200/80 text-sm mt-2 max-w-sm">
+          <div className="min-w-0 flex-1">
+            <p className="text-blue-200 text-xs sm:text-sm font-medium mb-1">Good {getTimeOfDay()} 👋</p>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight truncate">Welcome back, {firstName}!</h1>
+            <p className="text-blue-200/80 text-xs sm:text-sm mt-2 max-w-xs sm:max-w-sm leading-relaxed">
               Your AI-powered job search is ready. Let's land your next opportunity.
             </p>
-            <div className="flex items-center gap-3 mt-5">
-              <Link to="/search" className="inline-flex items-center gap-2 bg-white text-blue-700 font-bold text-sm px-5 py-2.5 rounded-2xl hover:bg-blue-50 transition-colors shadow-lg">
-                <Plus className="w-4 h-4" /> New Search
+            <div className="flex items-center gap-2 sm:gap-3 mt-4 sm:mt-5 flex-wrap">
+              <Link to="/search" className="inline-flex items-center gap-2 bg-white text-blue-700 font-bold text-xs sm:text-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl hover:bg-blue-50 transition-colors shadow-lg">
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> New Search
               </Link>
-              <Link to="/results" className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white font-semibold text-sm px-4 py-2.5 rounded-2xl transition-colors backdrop-blur-sm">
-                View Results <ArrowRight className="w-4 h-4" />
+              <Link to="/results" className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white font-semibold text-xs sm:text-sm px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl transition-colors backdrop-blur-sm">
+                View Results <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </Link>
             </div>
           </div>
-          <div className="hidden sm:flex flex-col items-end gap-2">
+          <div className="hidden sm:flex flex-col items-end gap-2 flex-shrink-0">
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[100px]">
               <p className="text-2xl font-black" style={{ color: creditColor === '#10b981' ? '#6ee7b7' : creditColor === '#f59e0b' ? '#fde68a' : '#fca5a5' }}>{remaining}</p>
               <p className="text-xs text-blue-200 font-medium">credits left</p>
@@ -372,19 +372,19 @@ export default function Dashboard() {
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => markFollowUpSent(job._id)}
                       disabled={!!fuMarking[job._id]}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200"
+                      className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200 whitespace-nowrap"
                       title="Mark as sent"
                     >
-                      <Check className="w-3.5 h-3.5" /> Sent
+                      <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Sent</span><span className="sm:hidden">✓</span>
                     </button>
                     <button
                       onClick={() => snoozeFollowUp(job._id)}
                       disabled={!!fuMarking[job._id]}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                      className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors whitespace-nowrap"
                       title="Snooze 3 days"
                     >
                       <Clock className="w-3.5 h-3.5" /> +3d

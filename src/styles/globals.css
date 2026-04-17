@@ -8,6 +8,18 @@
 .leaflet-control-container .leaflet-top,
 .leaflet-control-container .leaflet-bottom { z-index: 400; }
 
+/* Map search full-height container */
+/* Mobile: 3.5rem (header) + 4rem (bottom nav) */
+.map-search-container {
+  height: calc(100vh - 7.5rem);
+}
+/* Desktop: only 3.5rem (header), no bottom nav */
+@media (min-width: 1024px) {
+  .map-search-container {
+    height: calc(100vh - 3.5rem);
+  }
+}
+
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
   html {
@@ -15,8 +27,29 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* Prevent horizontal scroll on all devices */
+    overflow-x: hidden;
   }
-  body { @apply bg-slate-50 text-gray-900; }
+  body {
+    @apply bg-slate-50 text-gray-900;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    /* Safe area insets for notched phones */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  /* Ensure all interactive elements have a minimum 44px tap target on mobile */
+  @media (max-width: 1023px) {
+    button, a, [role="button"] {
+      min-height: 36px;
+    }
+  }
+
+  /* Prevent text size inflation on mobile landscape */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  /* Smooth scrolling on iOS */
+  .overflow-y-auto, .overflow-y-scroll { -webkit-overflow-scrolling: touch; }
 
   ::-webkit-scrollbar       { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }

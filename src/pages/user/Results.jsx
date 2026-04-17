@@ -282,7 +282,7 @@ export default function Results() {
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
 
   return (
-    <div className="flex gap-5 h-full max-w-7xl mx-auto relative">
+    <div className="flex gap-5 max-w-7xl mx-auto relative min-h-0">
 
       {/* ── Left — job list ───────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
@@ -342,21 +342,21 @@ export default function Results() {
               <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white" />
               <div className="absolute -left-4 -bottom-4 w-24 h-24 rounded-full bg-white" />
             </div>
-            <div className="relative flex items-center justify-between gap-4">
-              <div>
-                <p className="font-bold flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  {jobsWithEmail} HR emails ready for outreach
+            <div className="relative flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="font-bold flex items-center gap-2 text-sm sm:text-base">
+                  <Sparkles className="w-4 h-4 flex-shrink-0" />
+                  {jobsWithEmail} HR emails ready
                 </p>
-                <p className="text-blue-100 text-sm mt-0.5">AI-powered personalised emails · 7 credits each</p>
+                <p className="text-blue-100 text-xs sm:text-sm mt-0.5">AI-powered emails · 7 credits each</p>
               </div>
               <button
                 onClick={handleManageOutreach}
                 disabled={outreachLoading}
-                className="btn bg-white text-blue-700 hover:bg-blue-50 flex-shrink-0 font-bold"
+                className="btn bg-white text-blue-700 hover:bg-blue-50 flex-shrink-0 font-bold text-sm"
               >
                 {outreachLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Manage Outreach
+                Outreach
               </button>
             </div>
           </motion.div>
@@ -577,11 +577,11 @@ export default function Results() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: '100%' }}
             transition={{ duration: 0.28, ease: 'easeOut' }}
-            className="fixed bottom-0 inset-x-0 z-50 lg:relative lg:z-auto lg:bottom-auto lg:inset-x-auto lg:w-[380px] lg:flex-shrink-0"
+            className="fixed bottom-16 inset-x-0 z-50 lg:relative lg:z-auto lg:bottom-auto lg:inset-x-auto lg:w-[380px] lg:flex-shrink-0"
           >
             {/* Desktop: re-enter from right */}
             <div className="bg-white rounded-t-3xl lg:rounded-3xl border border-gray-100 lg:sticky lg:top-4 overflow-hidden"
-              style={{ maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px -4px rgba(0,0,0,0.1)' }}
+              style={{ maxHeight: '75vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px -4px rgba(0,0,0,0.1)' }}
             >
             {/* Mobile drag handle */}
             <div className="flex justify-center pt-3 pb-1 lg:hidden flex-shrink-0">
