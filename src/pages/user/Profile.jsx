@@ -7,12 +7,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, Briefcase, MapPin, Phone, Link, Target,
   Upload, Trash2, Loader2, CheckCircle, Plus, X,
-  Mail, ChevronDown, ChevronUp, Shield,
+  Mail, ChevronDown, ChevronUp, Shield, AlertCircle,
 } from 'lucide-react';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { api }      from '@utils/axios';
 import { cn }       from '@utils/helpers';
+import { getMissingFields } from '@utils/profileComplete';
 
 const schema = z.object({
   firstName:    z.string().min(1, 'Required'),
@@ -177,6 +178,45 @@ export default function Profile() {
           </div>
         </div>
       </motion.div>
+
+      {/* ── Mandatory fields banner ──────────────────────────────── */}
+      {(() => {
+        const missing = getMissingFields(user);
+        if (missing.length === 0) return null;
+        const LABELS = {
+          firstName: 'First name', lastName: 'Last name', phone: 'Phone',
+          city: 'City', currentRole: 'Current role', targetRole: 'Target role',
+          experience: 'Experience', noticePeriod: 'Notice period',
+          workType: 'Work type', skills: 'Skills',
+        };
+        const TAB_MAP = {
+          firstName: 'basic', lastName: 'basic', phone: 'basic', city: 'basic',
+          currentRole: 'career', targetRole: 'career', experience: 'career',
+          noticePeriod: 'career', workType: 'career', skills: 'skills',
+        };
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
+            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-amber-800">Complete your profile to unlock all features</p>
+              <p className="text-xs text-amber-600 mt-0.5 mb-2">
+                {missing.length} required field{missing.length > 1 ? 's' : ''} still missing:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {missing.map(f => (
+                  <button key={f} type="button"
+                    onClick={() => handleTabChange(TAB_MAP[f] || 'basic')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
+                               bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 transition-colors"
+                  >
+                    {LABELS[f] || f}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Tabs ─────────────────────────────────────────────────── */}
       <motion.div

@@ -10,6 +10,8 @@ import ForgotPassword from '@pages/auth/ForgotPassword';
 import ResetPassword  from '@pages/auth/ResetPassword';
 import VerifyEmail    from '@pages/auth/VerifyEmail';
 import OAuthCallback  from '@pages/auth/OAuthCallback';
+import SetupProfile   from '@pages/auth/SetupProfile';
+import ProfileGate    from './ProfileGate';
 
 // User pages
 import Dashboard      from '@pages/user/Dashboard';
@@ -57,6 +59,11 @@ export default function AppRouter() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password"  element={<ResetPassword />} />
         <Route path="/verify-email"    element={<VerifyEmail />} />
+      </Route>
+
+      {/* Profile setup — auth required, no layout, redirects away if already complete */}
+      <Route element={<ProfileGate />}>
+        <Route path="/setup-profile" element={<SetupProfile />} />
       </Route>
 
       {/* Protected user routes */}
