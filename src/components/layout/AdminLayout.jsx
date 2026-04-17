@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, BarChart2, Key, CreditCard,
   Flag, Bell, Megaphone, Shield, LogOut, Briefcase,
-  ChevronRight, Activity, Menu, X
+  ChevronRight, Activity, Menu, X, AlertTriangle
 } from 'lucide-react';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
@@ -18,7 +18,8 @@ const NAV = [
   { to: '/admin/features',  label: 'Features',    icon: Flag },
   { to: '/admin/alerts',    label: 'Alerts',      icon: Bell },
   { to: '/admin/comms',     label: 'Comms',       icon: Megaphone },
-  { to: '/admin/audit',     label: 'Audit Log',   icon: Shield },
+  { to: '/admin/audit',       label: 'Audit Log',   icon: Shield },
+  { to: '/admin/error-logs',  label: 'Error Logs',  icon: AlertTriangle },
 ];
 
 export default function AdminLayout({ children }) {

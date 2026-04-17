@@ -34,6 +34,7 @@ import AdminFeatures  from '@pages/admin/Features';
 import AdminAlerts    from '@pages/admin/Alerts';
 import AdminComms     from '@pages/admin/Comms';
 import AdminAuditLog  from '@pages/admin/AuditLog';
+import AdminErrorLogs from '@pages/admin/ErrorLogs';
 
 // Error pages
 import NotFound      from '@pages/errors/NotFound';
@@ -82,7 +83,8 @@ export default function AppRouter() {
         <Route path="/admin/features"  element={<AdminFeatures />} />
         <Route path="/admin/alerts"    element={<AdminAlerts />} />
         <Route path="/admin/comms"     element={<AdminComms />} />
-        <Route path="/admin/audit"     element={<AdminAuditLog />} />
+        <Route path="/admin/audit"       element={<AdminAuditLog />} />
+        <Route path="/admin/error-logs"  element={<AdminErrorLogs />} />
       </Route>
 
       <Route path="/"  element={<Navigate to="/dashboard" replace />} />
