@@ -4,28 +4,38 @@ import { api }      from '@utils/axios';
 import { useToast } from '@hooks/useToast';
 
 const DEFAULT_COSTS = {
-  JOB_SEARCH:    10,
-  HUNTER_LOOKUP: 15,
-  APOLLO_SEARCH: 10,
-  AI_EMAIL:       5,
-  RESUME_PARSE:  20,
-  EMAIL_SEND:     2,
-  EXCEL_EXPORT:   5,
+  JOB_SEARCH:          10,
+  HUNTER_LOOKUP:       15,
+  APOLLO_SEARCH:       10,
+  AI_EMAIL:             5,
+  RESUME_PARSE:        20,
+  RESUME_KEYWORD_OPT:   3,
+  AI_ANALYSIS:          3,
+  DEEP_EVALUATE:        8,
+  EMAIL_SEND:           2,
+  EXCEL_EXPORT:         5,
+  INTERVIEW_PREP:       3,
+  PROXYCURL:           30,
 };
 
 const CREDIT_LABELS = {
-  JOB_SEARCH:    'Job Search (per search)',
-  HUNTER_LOOKUP: 'Hunter.io Email Lookup',
-  APOLLO_SEARCH: 'Apollo Employee Search',
-  AI_EMAIL:      'AI Email Generation',
-  RESUME_PARSE:  'Resume AI Parsing',
-  EMAIL_SEND:    'Send Outreach Email',
-  EXCEL_EXPORT:  'Excel Export',
+  JOB_SEARCH:          'Job Search (per run)',
+  HUNTER_LOOKUP:       'HR Email Lookup (Hunter.io)',
+  APOLLO_SEARCH:       'Employee Search (Apollo)',
+  AI_EMAIL:            'AI Email Generation',
+  RESUME_PARSE:        'Resume AI Parse & ATS Optimise',
+  RESUME_KEYWORD_OPT:  'Resume Keyword Optimise (quick)',
+  AI_ANALYSIS:         'AI Job / Company Analysis',
+  DEEP_EVALUATE:       'Deep Job Evaluation (A–F)',
+  EMAIL_SEND:          'Send Outreach Email',
+  EXCEL_EXPORT:        'Excel / PDF Export',
+  INTERVIEW_PREP:      'Interview Prep Generator',
+  PROXYCURL:           'LinkedIn Profile Enrichment',
 };
 
 export default function AdminPlans() {
   const toast = useToast();
-  const [prices,  setPrices]  = useState({ proPlanPrice: 499, teamPlanPrice: 1999 });
+  const [prices,  setPrices]  = useState({ proPlanPrice: 499, proPlanPriceAnnual: 3999, teamPlanPrice: 1999, teamPlanPriceAnnual: 15999 });
   const [credits, setCredits] = useState(DEFAULT_COSTS);
   const [planCredits, setPlanCredits] = useState({ free: 100, pro: 1000, team: 5000 });
   const [loading, setLoading] = useState(true);
@@ -39,7 +49,12 @@ export default function AdminPlans() {
     ]).then(([billing, creditRes, limits]) => {
       const b = {};
       billing.data.data.forEach(c => { b[c.key] = c.value; });
-      setPrices({ proPlanPrice: b.proPlanPrice || 499, teamPlanPrice: b.teamPlanPrice || 1999 });
+      setPrices({
+        proPlanPrice:        b.proPlanPrice        || 499,
+        proPlanPriceAnnual:  b.proPlanPriceAnnual  || 3999,
+        teamPlanPrice:       b.teamPlanPrice       || 1999,
+        teamPlanPriceAnnual: b.teamPlanPriceAnnual || 15999,
+      });
 
       const cr = creditRes.data.data.find(c => c.key === 'creditCosts');
       if (cr?.value) setCredits({ ...DEFAULT_COSTS, ...cr.value });
@@ -62,12 +77,14 @@ export default function AdminPlans() {
     try {
       await api.post('/admin/config/bulk', {
         configs: [
-          { key: 'proPlanPrice',   value: parseInt(prices.proPlanPrice),  category: 'billing' },
-          { key: 'teamPlanPrice',  value: parseInt(prices.teamPlanPrice), category: 'billing' },
-          { key: 'creditCosts',    value: credits,                        category: 'credits' },
-          { key: 'freePlanLimits', value: { creditsPerMonth: parseInt(planCredits.free),  searchesPerDay: 2   }, category: 'limits' },
-          { key: 'proPlanLimits',  value: { creditsPerMonth: parseInt(planCredits.pro),   searchesPerDay: 999 }, category: 'limits' },
-          { key: 'teamPlanLimits', value: { creditsPerMonth: parseInt(planCredits.team),  searchesPerDay: 999 }, category: 'limits' },
+          { key: 'proPlanPrice',        value: parseInt(prices.proPlanPrice),        category: 'billing' },
+          { key: 'proPlanPriceAnnual',  value: parseInt(prices.proPlanPriceAnnual),  category: 'billing' },
+          { key: 'teamPlanPrice',       value: parseInt(prices.teamPlanPrice),       category: 'billing' },
+          { key: 'teamPlanPriceAnnual', value: parseInt(prices.teamPlanPriceAnnual), category: 'billing' },
+          { key: 'creditCosts',         value: credits,                              category: 'credits' },
+          { key: 'freePlanLimits',  value: { creditsPerMonth: parseInt(planCredits.free),  searchesPerDay: 2,   jobsPerSearch: 10, emailsPerMonth: 10,   hrLookupsPerMonth: 0,   graceCredits: 0   }, category: 'limits' },
+          { key: 'proPlanLimits',   value: { creditsPerMonth: parseInt(planCredits.pro),   searchesPerDay: 999, jobsPerSearch: 30, emailsPerMonth: 999,  hrLookupsPerMonth: 50,  graceCredits: 50  }, category: 'limits' },
+          { key: 'teamPlanLimits',  value: { creditsPerMonth: parseInt(planCredits.team),  searchesPerDay: 999, jobsPerSearch: 50, emailsPerMonth: 9999, hrLookupsPerMonth: 200, graceCredits: 100 }, category: 'limits' },
         ],
       });
       toast.success('Plans & credits saved!');
@@ -90,27 +107,29 @@ export default function AdminPlans() {
 
       {/* Plan pricing */}
       <div className="card card-body space-y-4">
-        <h2 className="font-semibold text-gray-900">Plan Pricing</h2>
+        <h2 className="font-semibold text-gray-900">Plan Pricing (₹)</h2>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Pro Plan Price (₹/month)</label>
-            <input
-              type="number"
-              value={prices.proPlanPrice}
-              onChange={e => setPrices(p => ({ ...p, proPlanPrice: e.target.value }))}
-              className="input"
-            />
-          </div>
-          <div>
-            <label className="label">Team Plan Price (₹/month)</label>
-            <input
-              type="number"
-              value={prices.teamPlanPrice}
-              onChange={e => setPrices(p => ({ ...p, teamPlanPrice: e.target.value }))}
-              className="input"
-            />
-          </div>
+          {[
+            { key: 'proPlanPrice',        label: 'Pro — Monthly'  },
+            { key: 'proPlanPriceAnnual',  label: 'Pro — Annual (save 33%)' },
+            { key: 'teamPlanPrice',       label: 'Team — Monthly' },
+            { key: 'teamPlanPriceAnnual', label: 'Team — Annual (save 33%)' },
+          ].map(({ key, label }) => (
+            <div key={key}>
+              <label className="label">{label}</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+                <input
+                  type="number"
+                  value={prices[key]}
+                  onChange={e => setPrices(p => ({ ...p, [key]: e.target.value }))}
+                  className="input pl-7"
+                />
+              </div>
+            </div>
+          ))}
         </div>
+        <p className="text-xs text-gray-400">Annual prices shown to users as one-time charge. Approx 20–33% saving vs monthly.</p>
       </div>
 
       {/* Credit costs */}

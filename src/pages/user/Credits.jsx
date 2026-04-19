@@ -8,22 +8,29 @@ import { api }        from '@utils/axios';
 import { cn }         from '@utils/helpers';
 import { fDateTime }  from '@utils/formatters';
 
-// Maps CREDIT_COSTS action key → breakdown field stored in DB (costs loaded from API)
+// Maps action key → display label + breakdown DB field (costs fetched live from API)
 const BREAKDOWN_BASE = {
-  JOB_SEARCH:    { label: 'Job Search',             field: 'searches'    },
-  HUNTER_LOOKUP: { label: 'HR Email Lookup',         field: 'emailLookups'},
-  AI_EMAIL:      { label: 'AI Email Generation',     field: 'aiEmails'    },
-  RESUME_PARSE:  { label: 'Resume Parse / Optimise', field: 'resumeParses'},
-  EMAIL_SEND:    { label: 'Email Send',               field: 'emailsSent'  },
-  EXCEL_EXPORT:  { label: 'Excel Export',             field: 'exports'     },
+  JOB_SEARCH:     { label: 'Job Search',                  field: 'searches'     },
+  HUNTER_LOOKUP:  { label: 'HR Email Lookup (Hunter.io)', field: 'emailLookups' },
+  AI_EMAIL:       { label: 'AI Email Generation',         field: 'aiEmails'     },
+  RESUME_PARSE:   { label: 'Resume Parse / ATS Optimise', field: 'resumeParses' },
+  DEEP_EVALUATE:  { label: 'Deep Job Evaluation (A–F)',   field: 'resumeParses' },
+  INTERVIEW_PREP: { label: 'Interview Prep Generator',    field: 'resumeParses' },
+  EMAIL_SEND:     { label: 'Outreach Email Send',         field: 'emailsSent'   },
+  EXCEL_EXPORT:   { label: 'Excel / PDF Export',          field: 'exports'      },
 };
 
-const DEFAULT_COSTS = { JOB_SEARCH: 10, HUNTER_LOOKUP: 15, AI_EMAIL: 5, RESUME_PARSE: 20, EMAIL_SEND: 2, EXCEL_EXPORT: 5 };
+const DEFAULT_COSTS = {
+  JOB_SEARCH: 10, HUNTER_LOOKUP: 15, AI_EMAIL: 5,
+  RESUME_PARSE: 20, DEEP_EVALUATE: 8, INTERVIEW_PREP: 3,
+  EMAIL_SEND: 2, EXCEL_EXPORT: 5,
+};
 
-const TOPUP_PACKS = [
-  { name: 'Starter', credits: 50,  price: 99,  popular: false },
-  { name: 'Power',   credits: 200, price: 299, popular: true  },
-  { name: 'Mega',    credits: 600, price: 699, popular: false },
+const DEFAULT_TOPUP_PACKS = [
+  { name: 'Starter',    credits: 50,   price: 99,   popular: false },
+  { name: 'Power',      credits: 200,  price: 299,  popular: true  },
+  { name: 'Mega',       credits: 600,  price: 699,  popular: false },
+  { name: 'Enterprise', credits: 2000, price: 1999, popular: false },
 ];
 
 // Load Razorpay checkout script on demand
@@ -46,6 +53,7 @@ export default function Credits() {
   const [actLoading,  setActLoading]  = useState(true);
   const [buying,      setBuying]      = useState('');
   const [liveCosts,   setLiveCosts]   = useState(DEFAULT_COSTS);
+  const [topupPacks,  setTopupPacks]  = useState(DEFAULT_TOPUP_PACKS);
 
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
 
@@ -58,7 +66,11 @@ export default function Credits() {
 
   useEffect(() => {
     api.get('/billing/plans')
-      .then(r => { if (r.data.data?.creditCosts) setLiveCosts(r.data.data.creditCosts); })
+      .then(r => {
+        const d = r.data.data;
+        if (d?.creditCosts) setLiveCosts(prev => ({ ...prev, ...d.creditCosts }));
+        if (d?.topupPacks?.length) setTopupPacks(d.topupPacks);
+      })
       .catch(() => {});
 
     api.get('/user/activity?limit=15')
@@ -229,7 +241,7 @@ export default function Credits() {
       <div>
         <h2 className="font-semibold text-gray-900 mb-3">Buy More Credits</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {TOPUP_PACKS.map(pack => (
+          {topupPacks.map(pack => (
             <div
               key={pack.name}
               className={cn('card card-body relative', pack.popular ? 'border-2 border-blue-500' : '')}
