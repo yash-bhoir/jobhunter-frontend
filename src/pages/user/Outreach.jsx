@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail, Send, Loader2, Sparkles, Trash2, X,
-  Clock, Building, User, AtSign, FileText, Plus, Users
+  Clock, Building, User, AtSign, FileText, Plus, Users,
+  Paperclip, CheckCircle, XCircle, Code, Download, Copy,
+  Check, AlertCircle, ChevronDown, ChevronUp, Eye,
 } from 'lucide-react';
 import { api }       from '@utils/axios';
 import { useToast }  from '@hooks/useToast';
@@ -11,17 +13,17 @@ import { fDateTime } from '@utils/formatters';
 import { cn }        from '@utils/helpers';
 
 const STATUS_CONFIG = {
-  pending:  { label: 'Pending',  cls: 'bg-gray-100 text-gray-600'   },
-  sent:     { label: 'Sent',     cls: 'bg-blue-100 text-blue-700'   },
-  bounced:  { label: 'Bounced',  cls: 'bg-red-100 text-red-700'     },
-  replied:  { label: 'Replied',  cls: 'bg-emerald-100 text-emerald-700' },
+  pending:  { label: 'Pending',  cls: 'bg-gray-100 text-gray-600',    icon: Clock       },
+  sent:     { label: 'Sent',     cls: 'bg-blue-100 text-blue-700',    icon: CheckCircle },
+  bounced:  { label: 'Bounced',  cls: 'bg-red-100 text-red-700',      icon: XCircle     },
+  replied:  { label: 'Replied',  cls: 'bg-emerald-100 text-emerald-700', icon: Mail    },
 };
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
 };
-const stagger = { show: { transition: { staggerChildren: 0.07 } } };
+const stagger = { show: { transition: { staggerChildren: 0.06 } } };
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -35,44 +37,62 @@ export default function Outreach() {
   const [loading,     setLoading]     = useState(true);
   const [genLoading,  setGenLoading]  = useState(false);
   const [sendLoading, setSendLoading] = useState(false);
+  const [sendProgress, setSendProgress] = useState(null); // { current, total, current_email }
   const [stats,       setStats]       = useState(null);
   const [tab,         setTab]         = useState('compose');
 
-  // Multi-recipient state
-  const [recipients,  setRecipients]  = useState([]);   // string[]
-  const [toInput,     setToInput]     = useState('');   // text in the "add email" field
+  // Recipient state
+  const [recipients,   setRecipients]   = useState([]);
+  const [selectedIds,  setSelectedIds]  = useState(new Set()); // which of recipients are selected to send
+  const [toInput,      setToInput]      = useState('');
 
   const [form, setForm] = useState({
     company: '', jobTitle: '', recruiterName: '', subject: '', body: '',
   });
-  const [generated, setGenerated] = useState(false);
-  const [emailId,   setEmailId]   = useState(null);
+  const [generated,    setGenerated]    = useState(false);
+  const [emailId,      setEmailId]      = useState(null);
+  const [attachResume, setAttachResume] = useState(true);
+  const [smtpWarning,  setSmtpWarning]  = useState(false);
 
-  // Populate from URL params on mount: ?to=a@x.com,b@x.com&company=X&jobTitle=Y
+  // LaTeX template state
+  const [latex,        setLatex]        = useState(null);
+  const [latexLoading, setLatexLoading] = useState(false);
+  const [latexModal,   setLatexModal]   = useState(null); // email object whose latex to show
+  const [copied,       setCopied]       = useState(false);
+
+  // Sent history detail expand
+  const [expandedId,  setExpandedId]   = useState(null);
+
+  // Populate from URL params: ?to=a@x.com,b@x.com&company=X&jobTitle=Y
   useEffect(() => {
-    const toParam      = searchParams.get('to')      || '';
-    const company      = searchParams.get('company') || '';
-    const jobTitle     = searchParams.get('jobTitle')|| '';
+    const toParam       = searchParams.get('to')       || '';
+    const company       = searchParams.get('company')  || '';
+    const jobTitle      = searchParams.get('jobTitle') || '';
     const recruiterName = searchParams.get('recruiterName') || '';
 
     if (toParam) {
       const parsed = toParam.split(',').map(e => e.trim()).filter(isValidEmail);
       setRecipients(parsed);
+      setSelectedIds(new Set(parsed)); // select all by default
     }
     if (company || jobTitle) {
       setForm(prev => ({ ...prev, company, jobTitle, recruiterName }));
     }
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchEmails();
     api.get('/outreach/stats').then(r => setStats(r.data.data)).catch(() => {});
+    // Check SMTP status
+    api.get('/profile/smtp/status').then(r => {
+      setSmtpWarning(!r.data.data?.configured);
+    }).catch(() => {});
   }, []);
 
   const fetchEmails = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/outreach?limit=20');
+      const { data } = await api.get('/outreach?limit=50');
       setEmails(data.data || []);
     } catch { toast.error('Failed to load emails'); }
     finally { setLoading(false); }
@@ -83,11 +103,21 @@ export default function Outreach() {
     if (!isValidEmail(e)) { toast.error('Enter a valid email address'); return; }
     if (recipients.includes(e)) { toast.error('Already added'); return; }
     setRecipients(prev => [...prev, e]);
+    setSelectedIds(prev => new Set([...prev, e])); // auto-select new ones
     setToInput('');
   };
 
   const removeRecipient = (email) => {
     setRecipients(prev => prev.filter(e => e !== email));
+    setSelectedIds(prev => { const s = new Set(prev); s.delete(email); return s; });
+  };
+
+  const toggleSelect = (email) => {
+    setSelectedIds(prev => {
+      const s = new Set(prev);
+      s.has(email) ? s.delete(email) : s.add(email);
+      return s;
+    });
   };
 
   const handleToKeyDown = (evt) => {
@@ -113,36 +143,71 @@ export default function Outreach() {
     } finally { setGenLoading(false); }
   };
 
+  // Fetch LaTeX template once
+  const fetchLatex = useCallback(async () => {
+    if (latex) return latex;
+    setLatexLoading(true);
+    try {
+      const { data } = await api.get('/outreach/generate-latex');
+      setLatex(data.data);
+      return data.data;
+    } catch { return null; }
+    finally { setLatexLoading(false); }
+  }, [latex]);
+
+  // Send in loop to all selected recipients
   const sendEmail = async () => {
-    if (recipients.length === 0) { toast.error('Add at least one recipient'); return; }
+    const targets = recipients.filter(r => selectedIds.has(r));
+    if (targets.length === 0) { toast.error('Select at least one recipient'); return; }
     if (!form.subject || !form.body) { toast.error('Generate or write the email first'); return; }
     setSendLoading(true);
-    try {
-      if (recipients.length === 1) {
-        // Single send
+    setSendProgress({ current: 0, total: targets.length, current_email: '' });
+
+    // Fetch LaTeX if not already loaded
+    let latexData = latex;
+    if (!latexData && attachResume) {
+      latexData = await fetchLatex();
+    }
+
+    let successCount = 0;
+    let failCount    = 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      const to = targets[i];
+      setSendProgress({ current: i + 1, total: targets.length, current_email: to });
+      try {
         await api.post('/outreach/send', {
-          to: recipients[0], subject: form.subject, body: form.body,
-          company: form.company, recruiterName: form.recruiterName, emailId,
-        });
-      } else {
-        // Bulk send
-        const emailPayloads = recipients.map(to => ({
           to,
-          subject: form.subject,
-          body:    form.body,
-          company: form.company,
+          subject:     form.subject,
+          body:        form.body,
+          company:     form.company,
           recruiterName: form.recruiterName,
-        }));
-        await api.post('/outreach/bulk', { emails: emailPayloads });
+          emailId:     i === 0 ? emailId : undefined,
+          attachResume,
+          latexTemplate: latexData?.latex || null,
+        });
+        successCount++;
+        if (i < targets.length - 1) {
+          // Small delay between sends to avoid spam filters
+          await new Promise(r => setTimeout(r, 600));
+        }
+      } catch (err) {
+        failCount++;
+        toast.error(`Failed to send to ${to}: ${err.response?.data?.message || err.message}`);
       }
-      toast.success(`Email sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}!`);
+    }
+
+    setSendLoading(false);
+    setSendProgress(null);
+
+    if (successCount > 0) {
+      toast.success(`Sent to ${successCount} recipient${successCount > 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}!`);
       setForm({ company: '', jobTitle: '', recruiterName: '', subject: '', body: '' });
-      setRecipients([]); setToInput('');
+      setRecipients([]); setSelectedIds(new Set()); setToInput('');
       setGenerated(false); setEmailId(null);
-      fetchEmails(); setTab('sent');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Send failed');
-    } finally { setSendLoading(false); }
+      fetchEmails();
+      setTab('sent');
+    }
   };
 
   const deleteEmail = async (id) => {
@@ -153,8 +218,25 @@ export default function Outreach() {
     } catch { toast.error('Failed to delete'); }
   };
 
-  const sentEmails   = emails.filter(e => e.status !== 'pending');
-  const creditCost   = recipients.length <= 1 ? 2 : recipients.length * 2;
+  const copyLatex = async (text) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const downloadLatex = (latex, filename) => {
+    const blob = new Blob([latex], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename || 'resume.tex';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const sentEmails   = emails.filter(e => e.status !== 'pending' || e.sentAt);
+  const selectedCount = recipients.filter(r => selectedIds.has(r)).length;
+  const creditCost   = selectedCount * 2;
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-5">
@@ -165,7 +247,6 @@ export default function Outreach() {
           <h1 className="text-xl font-bold text-gray-900">Outreach</h1>
           <p className="text-sm text-gray-400 mt-0.5">AI-powered personalized recruiter emails</p>
         </div>
-        {/* Tab switcher */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-xl flex-shrink-0">
           {['compose', 'sent'].map(t => (
             <button
@@ -182,6 +263,14 @@ export default function Outreach() {
         </div>
       </motion.div>
 
+      {/* Admin email warning */}
+      {smtpWarning && (
+        <motion.div variants={fadeUp} className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <span>No Gmail configured — emails will be sent from <strong>yash51217@gmail.com</strong> (admin fallback). <a href="/settings?tab=email" className="underline font-semibold">Set up your own Gmail →</a></span>
+        </motion.div>
+      )}
+
       {/* Stats row */}
       {stats && (
         <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -191,9 +280,7 @@ export default function Outreach() {
             { label: 'Pending', value: stats.pending, color: 'amber'   },
             { label: 'Replied', value: stats.replied, color: 'emerald' },
           ].map(({ label, value, color }) => (
-            <motion.div
-              key={label}
-              whileHover={{ y: -2 }}
+            <motion.div key={label} whileHover={{ y: -2 }}
               className="bg-white rounded-2xl border border-gray-100 p-4 text-center"
               style={{ boxShadow: '0 2px 12px -2px rgba(0,0,0,0.06)' }}
             >
@@ -201,95 +288,106 @@ export default function Outreach() {
                 color === 'blue'    ? 'text-blue-600' :
                 color === 'amber'   ? 'text-amber-600' :
                 color === 'emerald' ? 'text-emerald-600' : 'text-gray-700'
-              )}>
-                {value}
-              </p>
+              )}>{value}</p>
               <p className="text-xs text-gray-400 mt-0.5 font-medium">{label}</p>
             </motion.div>
           ))}
         </motion.div>
       )}
 
-      {/* Compose tab */}
       <AnimatePresence mode="wait">
+
+        {/* ── COMPOSE TAB ──────────────────────────────────────────── */}
         {tab === 'compose' && (
-          <motion.div
-            key="compose"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid lg:grid-cols-2 gap-4"
+          <motion.div key="compose" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }} className="grid lg:grid-cols-2 gap-4"
           >
 
             {/* Left — details */}
-            <div
-              className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4"
-              style={{ boxShadow: '0 2px 16px -2px rgba(0,0,0,0.07)' }}
-            >
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4"
+              style={{ boxShadow: '0 2px 16px -2px rgba(0,0,0,0.07)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">Email Details</h2>
                 <span className="text-xs text-gray-400 bg-gray-50 border border-gray-200 px-2 py-1 rounded-lg">Step 1</span>
               </div>
 
               <Field icon={Building} label="Company *">
-                <input
-                  value={form.company}
+                <input value={form.company}
                   onChange={e => setForm(p => ({ ...p, company: e.target.value }))}
-                  placeholder="e.g. Infosys, Google"
-                  className="input"
-                />
+                  placeholder="e.g. Infosys, Google" className="input" />
               </Field>
               <Field icon={FileText} label="Job Title *">
-                <input
-                  value={form.jobTitle}
+                <input value={form.jobTitle}
                   onChange={e => setForm(p => ({ ...p, jobTitle: e.target.value }))}
-                  placeholder="e.g. Senior React Developer"
-                  className="input"
-                />
+                  placeholder="e.g. Senior React Developer" className="input" />
               </Field>
               <Field icon={User} label="Recruiter Name">
-                <input
-                  value={form.recruiterName}
+                <input value={form.recruiterName}
                   onChange={e => setForm(p => ({ ...p, recruiterName: e.target.value }))}
-                  placeholder="e.g. Priya Sharma (optional)"
-                  className="input"
-                />
+                  placeholder="e.g. Priya Sharma (optional)" className="input" />
               </Field>
 
-              {/* Multi-recipient field */}
+              {/* Multi-recipient with selection */}
               <div>
                 <label className="label flex items-center gap-1.5">
                   <AtSign className="w-3.5 h-3.5 text-gray-400" />
-                  Recipients *
+                  Recipients
                   {recipients.length > 0 && (
                     <span className="ml-auto text-[10px] bg-blue-100 text-blue-700 font-semibold px-1.5 py-0.5 rounded-full">
-                      {recipients.length} · {creditCost} cr
+                      {selectedCount}/{recipients.length} selected · {creditCost} cr
                     </span>
                   )}
                 </label>
 
-                {/* Chips */}
+                {/* Email chips with checkboxes */}
                 {recipients.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                  <div className="space-y-1.5 mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-gray-400">Click to select/deselect which emails to send to</span>
+                      <button
+                        onClick={() => setSelectedIds(
+                          selectedCount === recipients.length
+                            ? new Set()
+                            : new Set(recipients)
+                        )}
+                        className="text-[10px] text-blue-600 hover:underline font-semibold"
+                      >
+                        {selectedCount === recipients.length ? 'Deselect all' : 'Select all'}
+                      </button>
+                    </div>
                     <AnimatePresence>
-                      {recipients.map(email => (
-                        <motion.span
-                          key={email}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg font-medium"
-                        >
-                          <Mail className="w-3 h-3 flex-shrink-0" />
-                          <span className="max-w-[160px] truncate">{email}</span>
-                          <button
-                            onClick={() => removeRecipient(email)}
-                            className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors"
+                      {recipients.map(email => {
+                        const isSelected = selectedIds.has(email);
+                        return (
+                          <motion.div key={email}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 8 }}
+                            className={cn(
+                              'flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-all',
+                              isSelected
+                                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                : 'bg-gray-50 border-gray-200 text-gray-400 line-through'
+                            )}
+                            onClick={() => toggleSelect(email)}
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </motion.span>
-                      ))}
+                            <div className={cn(
+                              'w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors',
+                              isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
+                            )}>
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                            </div>
+                            <Mail className="w-3 h-3 flex-shrink-0" />
+                            <span className="flex-1 truncate">{email}</span>
+                            <button
+                              onClick={e => { e.stopPropagation(); removeRecipient(email); }}
+                              className="ml-1 text-gray-300 hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </motion.div>
+                        );
+                      })}
                     </AnimatePresence>
                   </div>
                 )}
@@ -311,7 +409,30 @@ export default function Outreach() {
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">Press Enter or comma to add multiple recipients</p>
+                <p className="text-[10px] text-gray-400 mt-1">Press Enter or comma to add. Click an email to select/deselect for sending.</p>
+              </div>
+
+              {/* Attach resume toggle */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-gray-400" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Attach Resume</p>
+                    <p className="text-[10px] text-gray-400">PDF from your profile</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAttachResume(p => !p)}
+                  className={cn(
+                    'relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none cursor-pointer',
+                    attachResume ? 'bg-blue-600' : 'bg-gray-300'
+                  )}
+                >
+                  <span className={cn(
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                    attachResume ? 'translate-x-4' : 'translate-x-0'
+                  )} />
+                </button>
               </div>
 
               <button
@@ -328,10 +449,8 @@ export default function Outreach() {
             </div>
 
             {/* Right — email content */}
-            <div
-              className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4"
-              style={{ boxShadow: '0 2px 16px -2px rgba(0,0,0,0.07)' }}
-            >
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4"
+              style={{ boxShadow: '0 2px 16px -2px rgba(0,0,0,0.07)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-gray-900">
                   Email Content
@@ -344,60 +463,73 @@ export default function Outreach() {
 
               <div>
                 <label className="label">Subject</label>
-                <input
-                  value={form.subject}
+                <input value={form.subject}
                   onChange={e => setForm(p => ({ ...p, subject: e.target.value }))}
-                  placeholder="Email subject…"
-                  className="input"
-                />
+                  placeholder="Email subject…" className="input" />
               </div>
-              <div className="flex-1">
+              <div>
                 <label className="label">Body</label>
-                <textarea
-                  value={form.body}
+                <textarea value={form.body}
                   onChange={e => setForm(p => ({ ...p, body: e.target.value }))}
                   placeholder="Email body will appear after AI generation, or type manually…"
-                  rows={9}
-                  className="input resize-none"
-                />
+                  rows={9} className="input resize-none" />
               </div>
 
-              {/* Send button — adapts for single vs multi */}
+              {/* Send progress */}
+              {sendProgress && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-semibold text-blue-700">
+                      Sending {sendProgress.current} / {sendProgress.total}
+                    </span>
+                    <span className="text-xs text-blue-500 truncate max-w-[180px]">{sendProgress.current_email}</span>
+                  </div>
+                  <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                      style={{ width: `${(sendProgress.current / sendProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Send button */}
               <button
                 onClick={sendEmail}
-                disabled={sendLoading || recipients.length === 0 || !form.subject || !form.body}
+                disabled={sendLoading || selectedCount === 0 || !form.subject || !form.body}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:opacity-90 transition-opacity disabled:opacity-40"
               >
                 {sendLoading
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
-                  : recipients.length > 1
-                    ? <><Users className="w-4 h-4" /> Send to {recipients.length} recipients</>
+                  : selectedCount > 1
+                    ? <><Users className="w-4 h-4" /> Send to {selectedCount} recipients</>
                     : <><Send className="w-4 h-4" /> Send Email</>
                 }
-                <span className="ml-1 text-xs bg-white/20 px-2 py-0.5 rounded-full">{creditCost} cr</span>
+                {!sendLoading && creditCost > 0 && (
+                  <span className="ml-1 text-xs bg-white/20 px-2 py-0.5 rounded-full">{creditCost} cr</span>
+                )}
               </button>
 
-              {recipients.length > 1 && (
+              {selectedCount > 1 && (
                 <p className="text-[10px] text-center text-gray-400">
-                  Same email sent to all {recipients.length} recipients · 2 credits each
+                  Sending sequentially to {selectedCount} recipients · {creditCost} credits total
+                  {attachResume && ' · Resume attached to each'}
                 </p>
               )}
             </div>
           </motion.div>
         )}
 
-        {/* Sent tab */}
+        {/* ── SENT TAB ──────────────────────────────────────────────── */}
         {tab === 'sent' && (
-          <motion.div
-            key="sent"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+          <motion.div key="sent" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
             style={{ boxShadow: '0 2px 16px -2px rgba(0,0,0,0.07)' }}
           >
-            <div className="px-5 py-3.5 border-b border-gray-100">
+            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">Sent Emails</h2>
+              <span className="text-xs text-gray-400">{sentEmails.length} records</span>
             </div>
 
             {loading ? (
@@ -424,39 +556,168 @@ export default function Outreach() {
               <motion.div variants={stagger} initial="hidden" animate="show" className="divide-y divide-gray-50">
                 {sentEmails.map(email => {
                   const s = STATUS_CONFIG[email.status] || STATUS_CONFIG.sent;
+                  const StatusIcon = s.icon;
+                  const isExpanded = expandedId === email._id;
                   return (
-                    <motion.div
-                      key={email._id}
-                      variants={fadeUp}
-                      className="flex items-start gap-3 px-5 py-4 hover:bg-slate-50 transition-colors group"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                        <Mail className="w-4.5 h-4.5 text-blue-500" style={{width:'18px',height:'18px'}} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="font-semibold text-gray-900 text-sm truncate">{email.subject}</p>
-                          <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', s.cls)}>
-                            {s.label}
-                          </span>
+                    <motion.div key={email._id} variants={fadeUp}>
+                      {/* Row */}
+                      <div className="flex items-start gap-3 px-5 py-4 hover:bg-slate-50 transition-colors group">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                          <Mail className="w-4.5 h-4.5 text-blue-500" style={{ width: '18px', height: '18px' }} />
                         </div>
-                        <p className="text-xs text-gray-500">To: {email.to} · {email.company}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {fDateTime(email.sentAt || email.createdAt)}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                            <p className="font-semibold text-gray-900 text-sm truncate">{email.subject}</p>
+                            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 flex items-center gap-1', s.cls)}>
+                              <StatusIcon className="w-3 h-3" /> {s.label}
+                            </span>
+                            {email.resumeAttached && (
+                              <span className="text-[10px] bg-violet-100 text-violet-700 font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                <Paperclip className="w-2.5 h-2.5" /> Resume
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500">To: {email.to} · {email.company}</p>
+                          <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
+                            <Clock className="w-3 h-3" />
+                            {fDateTime(email.sentAt || email.createdAt)}
+                            {email.senderEmail && (
+                              <span className="text-gray-300">· via {email.senderEmail}</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {/* View body toggle */}
+                          <button
+                            onClick={() => setExpandedId(isExpanded ? null : email._id)}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                            title={isExpanded ? 'Collapse' : 'View email'}
+                          >
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                          {/* LaTeX template button */}
+                          {email.latexTemplate && (
+                            <button
+                              onClick={() => setLatexModal(email)}
+                              className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors"
+                              title="View LaTeX Resume Template"
+                            >
+                              <Code className="w-4 h-4" />
+                            </button>
+                          )}
+                          {/* Delete */}
+                          <button
+                            onClick={() => deleteEmail(email._id)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => deleteEmail(email._id)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+
+                      {/* Expanded body */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-4 bg-slate-50 border-t border-gray-100">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-3 mb-1.5">Email Body</p>
+                              <pre className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed font-sans bg-white rounded-xl p-3 border border-gray-100">
+                                {email.body}
+                              </pre>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   );
                 })}
               </motion.div>
             )}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── LaTeX Template Modal ───────────────────────────────────── */}
+      <AnimatePresence>
+        {latexModal && (
+          <>
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-[1100]"
+              onClick={() => setLatexModal(null)}
+            />
+            <motion.div
+              key="modal"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed inset-4 sm:inset-8 lg:inset-16 z-[1101] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+            >
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+                <div>
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <Code className="w-4 h-4 text-violet-600" />
+                    LaTeX Resume Template
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Sent with email to {latexModal.to} · {fDateTime(latexModal.sentAt || latexModal.createdAt)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => copyLatex(latexModal.latexTemplate)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={() => downloadLatex(
+                      latexModal.latexTemplate,
+                      `${latexModal.company || 'Resume'}_Resume.tex`
+                    )}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download .tex
+                  </button>
+                  <a
+                    href={`https://www.overleaf.com/docs?snip_uri=data:application/x-tex;base64,${btoa(latexModal.latexTemplate)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Open in Overleaf
+                  </a>
+                  <button onClick={() => setLatexModal(null)} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* LaTeX code */}
+              <div className="flex-1 overflow-auto p-6">
+                <pre className="text-[11px] text-gray-800 leading-relaxed font-mono bg-gray-950 text-green-400 rounded-2xl p-5 overflow-auto whitespace-pre">
+                  {latexModal.latexTemplate}
+                </pre>
+              </div>
+
+              <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+                <p className="text-xs text-gray-400 text-center">
+                  Compile with <strong>pdflatex</strong> or paste into <strong>Overleaf</strong> to generate your PDF resume.
+                  Make sure <code className="bg-gray-200 px-1 rounded text-xs">glyphtounicode.tex</code> is available in your LaTeX distribution.
+                </p>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </motion.div>

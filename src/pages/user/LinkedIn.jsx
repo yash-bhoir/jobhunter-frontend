@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Linkedin, Plus, Search, Mail, Users, ExternalLink,
-  Loader2, Trash2, Copy, Check, RefreshCw, Zap,
-  MapPin, Building, Star, AlertCircle, X, ChevronRight,
-  Bell, BellOff,
+  Linkedin, Plus, Mail,
+  Loader2, RefreshCw, Zap,
+  MapPin, Building, Star, AlertCircle, X,
+  Bell, BellOff, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { fAgo }     from '@utils/formatters';
 import { cn }       from '@utils/helpers';
+import JobDetailPanel from '@components/jobs/JobDetailPanel';
 
 const STATUS_CONFIG = {
   new:     { label: 'New',     cls: 'bg-blue-100 text-blue-700'    },
@@ -47,12 +47,14 @@ export default function LinkedIn() {
   const [loading,      setLoading]      = useState(true);
   const [selected,     setSelected]     = useState(null);
   const [showAdd,      setShowAdd]      = useState(false);
-  const [finding,      setFinding]      = useState('');
-  const [copied,       setCopied]       = useState('');
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchResult,  setFetchResult]  = useState(null);
   const [addLoading,   setAddLoading]   = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [page,         setPage]         = useState(1);
+  const [total,        setTotal]        = useState(0);
+  const LIMIT = 20;
+
   const [fetchConfig,  setFetchConfig]  = useState({
     role:     user?.profile?.targetRole || '',
     location: user?.profile?.preferredLocations?.[0] || 'India',
@@ -63,8 +65,8 @@ export default function LinkedIn() {
     title: '', company: '', location: '', url: '', description: '', salary: '', remote: false,
   });
 
-  const [alertSettings,      setAlertSettings]      = useState({ enabled: true, frequency: 'daily' });
-  const [alertSaving,        setAlertSaving]        = useState(false);
+  const [alertSettings, setAlertSettings] = useState({ enabled: true, frequency: 'daily' });
+  const [alertSaving,   setAlertSaving]   = useState(false);
 
   useEffect(() => {
     api.get('/linkedin/alerts/settings')
@@ -83,14 +85,16 @@ export default function LinkedIn() {
     finally { setAlertSaving(false); }
   };
 
-  useEffect(() => { fetchJobs(); }, [statusFilter]);
+  useEffect(() => { fetchJobs(); }, [statusFilter, page]);
 
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      const params = statusFilter ? `?status=${statusFilter}` : '';
-      const { data } = await api.get(`/linkedin/jobs${params}`);
+      const params = new URLSearchParams({ page, limit: LIMIT });
+      if (statusFilter) params.set('status', statusFilter);
+      const { data } = await api.get(`/linkedin/jobs?${params}`);
       setJobs(data.data || []);
+      setTotal(data.pagination?.total || 0);
     } catch { toast.error('Failed to load jobs'); }
     finally { setLoading(false); }
   };
@@ -100,8 +104,11 @@ export default function LinkedIn() {
     try {
       const { data } = await api.post('/linkedin/fetch', fetchConfig);
       setFetchResult(data.data);
-      if (data.data.saved > 0) { toast.success(`Fetched ${data.data.saved} new jobs!`); fetchJobs(); }
-      else toast.info(data.message || 'No new jobs found');
+      if (data.data.saved > 0) {
+        toast.success(`Fetched ${data.data.saved} new jobs!`);
+        setPage(1);
+        fetchJobs();
+      } else toast.info(data.message || 'No new jobs found');
     } catch (err) { toast.error(err.response?.data?.message || 'Fetch failed'); }
     finally { setFetchLoading(false); }
   };
@@ -113,49 +120,20 @@ export default function LinkedIn() {
       await api.post('/linkedin/jobs', form);
       toast.success('Job added!');
       setForm({ title: '', company: '', location: '', url: '', description: '', salary: '', remote: false });
-      setShowAdd(false); fetchJobs();
+      setShowAdd(false);
+      setPage(1);
+      fetchJobs();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setAddLoading(false); }
   };
 
-  const findHR = async (jobId) => {
-    setFinding(jobId);
-    try {
-      const { data } = await api.post(`/linkedin/jobs/${jobId}/find-hr`);
-      toast.success(`Found ${data.data.emails?.length || 0} HR emails + ${data.data.employees?.length || 0} employees!`);
-      fetchJobs();
-      if (selected?._id === jobId) {
-        const res = await api.get(`/linkedin/jobs/${jobId}`);
-        setSelected(res.data.data);
-      }
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setFinding(''); }
-  };
-
-  const updateStatus = async (jobId, status) => {
-    try {
-      await api.patch(`/linkedin/jobs/${jobId}/status`, { status });
-      setJobs(prev => prev.map(j => j._id === jobId ? { ...j, status } : j));
-      if (selected?._id === jobId) setSelected(prev => ({ ...prev, status }));
-    } catch { toast.error('Failed to update status'); }
-  };
-
-  const deleteJob = async (jobId) => {
-    if (!confirm('Delete this job?')) return;
-    try {
-      await api.delete(`/linkedin/jobs/${jobId}`);
-      setJobs(prev => prev.filter(j => j._id !== jobId));
-      if (selected?._id === jobId) setSelected(null);
-      toast.success('Deleted');
-    } catch { toast.error('Failed to delete'); }
-  };
-
-  const copy = async (text) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(text); setTimeout(() => setCopied(''), 2000); toast.success('Copied!');
-  };
-
   const withEmail = jobs.filter(j => j.recruiterEmail).length;
+  const totalPages = Math.ceil(total / LIMIT);
+
+  const changePage = (newPage) => {
+    setPage(newPage);
+    setSelected(null);
+  };
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
@@ -168,7 +146,7 @@ export default function LinkedIn() {
             LinkedIn Job Alerts
           </h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {jobs.length} saved · {withEmail} HR emails found
+            {total} saved · {withEmail} HR emails found
           </p>
         </div>
         <div className="flex gap-2">
@@ -292,7 +270,7 @@ export default function LinkedIn() {
 
       {/* Gmail section */}
       <motion.div variants={fadeUp}>
-        <GmailAlertSection onFetched={fetchJobs} />
+        <GmailAlertSection onFetched={() => { setPage(1); fetchJobs(); }} />
       </motion.div>
 
       {/* Add manually */}
@@ -334,14 +312,14 @@ export default function LinkedIn() {
         {['', 'new', 'saved', 'applied', 'ignored'].map(s => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => { setStatusFilter(s); setPage(1); setSelected(null); }}
             className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all capitalize',
               statusFilter === s
                 ? 'bg-blue-600 text-white border-blue-600'
                 : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
             )}
           >
-            {s || 'All'} {s === '' && `(${jobs.length})`}
+            {s || 'All'} {s === '' && `(${total})`}
           </button>
         ))}
       </div>
@@ -439,194 +417,69 @@ export default function LinkedIn() {
               })}
             </motion.div>
           )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                disabled={page === 1}
+                onClick={() => changePage(page - 1)}
+                className="btn btn-secondary btn-sm"
+              >
+                <ChevronLeft className="w-4 h-4" /> Prev
+              </button>
+              <span className="text-sm font-medium text-gray-600">
+                Page {page} of {totalPages} · {total} jobs
+              </span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => changePage(page + 1)}
+                className="btn btn-secondary btn-sm"
+              >
+                Next <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Detail panel */}
-        <AnimatePresence>
-          {selected && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="w-88 flex-shrink-0"
-              style={{ width: '22rem' }}
-            >
-              <div
-                className="bg-white rounded-2xl border border-gray-100 sticky top-0 overflow-y-auto"
-                style={{ maxHeight: 'calc(100vh - 5rem)', boxShadow: '0 4px 24px -4px rgba(0,0,0,0.1)' }}
-              >
-                <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-900 text-sm">Job Details</h3>
-                  <button onClick={() => setSelected(null)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="p-4 space-y-4">
-                  {/* Title */}
-                  <div>
-                    <div className="flex items-start gap-3 mb-2">
-                      <CompanyAvatar name={selected.company} />
-                      <div>
-                        <h2 className="font-bold text-gray-900 leading-tight">{selected.title}</h2>
-                        <p className="text-gray-500 text-sm font-medium">{selected.company}</p>
-                        {selected.location && (
-                          <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" /> {selected.location}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selected.remote && <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">Remote</span>}
-                      {selected.salary && <span className="text-xs bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full">{selected.salary}</span>}
-                      <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', (STATUS_CONFIG[selected.status] || STATUS_CONFIG.new).cls)}>
-                        {(STATUS_CONFIG[selected.status] || STATUS_CONFIG.new).label}
-                      </span>
-                      {selected.matchScore > 0 && (
-                        <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1',
-                          selected.matchScore >= 75 ? 'bg-emerald-100 text-emerald-700' :
-                          selected.matchScore >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
-                        )}>
-                          <Star className="w-3 h-3" /> {selected.matchScore}% match
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* HR Contact */}
-                  {selected.recruiterEmail ? (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-2">
-                      <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">HR Contact ✓</p>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">{selected.recruiterName || 'HR Contact'}</p>
-                          <p className="text-sm text-blue-600 font-mono">{selected.recruiterEmail}</p>
-                        </div>
-                        <button onClick={() => copy(selected.recruiterEmail)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                          {copied === selected.recruiterEmail ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      {selected.recruiterLinkedIn && (
-                        <a href={selected.recruiterLinkedIn} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                          <Linkedin className="w-3 h-3" /> LinkedIn Profile
-                        </a>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                      <p className="text-xs text-gray-500 mb-2">No HR email found yet</p>
-                      <button
-                        onClick={() => findHR(selected._id)}
-                        disabled={finding === selected._id}
-                        className="btn btn-secondary btn-sm w-full justify-center"
-                      >
-                        {finding === selected._id
-                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding…</>
-                          : <><Search className="w-4 h-4" /> Find HR + Employees</>}
-                        {!isPro && <span className="text-xs bg-amber-100 text-amber-600 font-semibold px-1.5 py-0.5 rounded-full ml-1">Pro</span>}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Employees */}
-                  {selected.employees?.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1">
-                        <Users className="w-4 h-4" /> Employees ({selected.employees.length})
-                      </h4>
-                      <div className="space-y-1.5">
-                        {selected.employees.map((emp, i) => (
-                          <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                            <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold flex-shrink-0">
-                              {emp.name?.[0]?.toUpperCase() || '?'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-gray-900 truncate">{emp.name}</p>
-                              <p className="text-xs text-gray-500 truncate">{emp.title}</p>
-                            </div>
-                            <div className="flex gap-1">
-                              {emp.linkedin && (
-                                <a href={emp.linkedin} target="_blank" rel="noopener noreferrer" className="p-1 text-blue-600 hover:text-blue-700">
-                                  <Linkedin className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                              {emp.email && (
-                                <button onClick={() => copy(emp.email)} className="p-1 text-gray-400 hover:text-gray-600">
-                                  {copied === emp.email ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  {selected.description && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900 mb-1">Description</h4>
-                      <p className="text-xs text-gray-500 leading-relaxed line-clamp-6">{selected.description}</p>
-                    </div>
-                  )}
-
-                  {/* Status */}
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Update Status</h4>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {['new', 'saved', 'applied', 'ignored'].map(s => (
-                        <button
-                          key={s}
-                          onClick={() => updateStatus(selected._id, s)}
-                          className={cn('py-1.5 rounded-lg text-xs font-semibold border capitalize transition-colors',
-                            selected.status === s
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-                          )}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-col gap-2 pt-1">
-                    {selected.url && (
-                      <a href={selected.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary w-full justify-center">
-                        <ExternalLink className="w-4 h-4" /> View on LinkedIn
-                      </a>
-                    )}
-                    {selected.recruiterEmail && (
-                      <button
-                        onClick={() => {
-                          window.location.href =
-                            `/outreach?to=${encodeURIComponent(selected.recruiterEmail)}` +
-                            `&company=${encodeURIComponent(selected.company)}` +
-                            `&jobTitle=${encodeURIComponent(selected.title)}`;
-                        }}
-                        className="btn btn-secondary w-full justify-center"
-                      >
-                        <Mail className="w-4 h-4" /> Send Outreach
-                      </button>
-                    )}
-                    {!selected.recruiterEmail && (
-                      <button onClick={() => findHR(selected._id)} disabled={finding === selected._id} className="btn btn-secondary w-full justify-center">
-                        {finding === selected._id ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding…</> : <><Users className="w-4 h-4" /> Find HR + Employees</>}
-                        {!isPro && <span className="text-xs bg-amber-100 text-amber-600 font-semibold px-1.5 py-0.5 rounded-full ml-1">Pro</span>}
-                      </button>
-                    )}
-                    <button onClick={() => deleteJob(selected._id)} className="btn btn-danger w-full justify-center">
-                      <Trash2 className="w-4 h-4" /> Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+
+      {/* Detail panel — full overlay slide-in from right */}
+      <AnimatePresence>
+        {selected && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/20 z-[1100]"
+              onClick={() => setSelected(null)}
+            />
+            {/* Sheet */}
+            <motion.div
+              key="sheet"
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ type: 'tween', duration: 0.22, ease: 'easeOut' }}
+              className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-[1101] flex flex-col overflow-hidden"
+            >
+              <JobDetailPanel
+                job={selected}
+                mode="linkedin"
+                onClose={() => setSelected(null)}
+                onJobUpdate={(patch) => {
+                  if (patch._deleted) { setSelected(null); fetchJobs(); return; }
+                  setJobs(prev => prev.map(j => j._id === selected._id ? { ...j, ...patch } : j));
+                  setSelected(prev => prev ? { ...prev, ...patch } : prev);
+                }}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -641,12 +494,10 @@ function GmailAlertSection({ onFetched }) {
     api.get('/linkedin/gmail/status').then(r => setStatus(r.data.data)).catch(() => setStatus({ connected: false }));
     const params = new URLSearchParams(window.location.search);
     if (params.get('gmail') === 'connected') {
-      toast.success('Gmail connected!');
-      window.history.replaceState({}, '', '/linkedin');
       api.get('/linkedin/gmail/status').then(r => setStatus(r.data.data));
+      window.history.replaceState({}, '', '/linkedin');
     }
     if (params.get('gmail') === 'error') {
-      toast.error('Gmail connection failed. Try again.');
       window.history.replaceState({}, '', '/linkedin');
     }
   }, []);
@@ -655,15 +506,15 @@ function GmailAlertSection({ onFetched }) {
     try {
       const { data } = await api.get('/linkedin/gmail/connect');
       window.location.href = data.data.url;
-    } catch { toast.error('Failed to connect Gmail'); }
+    } catch { }
   };
 
   const disconnect = async () => {
     if (!confirm('Disconnect Gmail?')) return;
     try {
       await api.delete('/linkedin/gmail/disconnect');
-      setStatus({ connected: false }); toast.success('Disconnected');
-    } catch { toast.error('Failed'); }
+      setStatus({ connected: false });
+    } catch {}
   };
 
   const fetchFromGmail = async () => {
@@ -671,10 +522,9 @@ function GmailAlertSection({ onFetched }) {
     try {
       const { data } = await api.post('/linkedin/gmail/fetch');
       setFetchResult(data.data);
-      if (data.data.saved > 0) { toast.success(`Fetched ${data.data.saved} jobs from Gmail!`); onFetched(); }
-      else toast.info('No new LinkedIn alert emails found');
+      if (data.data.saved > 0) onFetched();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Fetch failed');
+      // ignore
     } finally { setFetchLoading(false); }
   };
 

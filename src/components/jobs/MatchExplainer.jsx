@@ -3,7 +3,7 @@ import { Sparkles, Loader2, ChevronDown, ChevronUp, CheckCircle, XCircle, AlertC
 import { api } from '@utils/axios';
 import { cn }  from '@utils/helpers';
 
-export default function MatchExplainer({ jobId, matchScore }) {
+export default function MatchExplainer({ jobId, matchScore, endpoint }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(false);
   const [open,    setOpen]    = useState(false);
@@ -12,7 +12,8 @@ export default function MatchExplainer({ jobId, matchScore }) {
     if (data) { setOpen(!open); return; }
     setLoading(true);
     try {
-      const { data: res } = await require('@utils/axios').api.get(`/jobs/${jobId}/explain`);
+      const url = endpoint || `/jobs/${jobId}/explain`;
+      const { data: res } = await api.get(url);
       setData(res.data);
       setOpen(true);
     } catch {

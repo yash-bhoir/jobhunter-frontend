@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, MapPin, Loader2, Clock, LocateFixed, Navigation } from 'lucide-react';
+import { Search, MapPin, Loader2, Clock, LocateFixed, Navigation, X, History } from 'lucide-react';
 import MapView            from '@components/map/MapView';
 import JobListPanel       from '@components/map/JobListPanel';
 import RadiusControl      from '@components/map/RadiusControl';
@@ -17,10 +17,20 @@ function getHistory()      { try { return JSON.parse(localStorage.getItem(HISTOR
 function saveToHistory(e)  {
   const h = getHistory();
   localStorage.setItem(HISTORY_KEY, JSON.stringify(
-    [e, ...h.filter(x => x.location !== e.location || x.title !== e.title)].slice(0, 8)
+    [{ ...e, savedAt: Date.now() }, ...h.filter(x => x.location !== e.location || x.title !== e.title)].slice(0, 10)
   ));
 }
 function clearHistory()    { localStorage.removeItem(HISTORY_KEY); }
+function fAgo(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 export default function MapSearch() {
   const [center,         setCenter]         = useState(DEFAULT_CENTER);
@@ -401,6 +411,43 @@ export default function MapSearch() {
           )}
         </div>
       </div>
+
+      {/* ── Search history chips ─────────────────────────────────── */}
+      {history.length > 0 && (
+        <div
+          className="bg-white border-b border-gray-100 flex-shrink-0 px-3 sm:px-4 py-1.5 flex items-center gap-2 overflow-x-auto"
+          style={{ position: 'relative', zIndex: 999 }}
+        >
+          <div className="flex items-center gap-1 text-gray-400 flex-shrink-0">
+            <History className="w-3 h-3" />
+            <span className="text-[10px] font-semibold uppercase tracking-wide">Recent</span>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            {history.map((entry, i) => (
+              <button
+                key={i}
+                onClick={() => restoreHistory(entry)}
+                className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-medium transition-colors group"
+                title={`Search: ${entry.title ? `"${entry.title}" in ` : ''}${entry.location} · ${entry.radius || DEFAULT_RADIUS_KM} km`}
+              >
+                <MapPin className="w-3 h-3 flex-shrink-0" />
+                <span className="max-w-[120px] truncate">
+                  {entry.title ? `${entry.title} · ` : ''}{entry.location}
+                </span>
+                {entry.radius && <span className="text-blue-400 text-[10px]">{entry.radius}km</span>}
+                {entry.savedAt && <span className="text-blue-300 text-[10px] hidden sm:inline">{fAgo(entry.savedAt)}</span>}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => { clearHistory(); setHistory([]); }}
+            className="flex-shrink-0 p-1 rounded-full hover:bg-gray-100 text-gray-300 hover:text-gray-500 transition-colors ml-auto"
+            title="Clear history"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* ── Body ─────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">

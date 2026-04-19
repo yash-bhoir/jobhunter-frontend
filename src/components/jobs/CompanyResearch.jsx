@@ -7,7 +7,7 @@ import {
 import { api } from '@utils/axios';
 import { cn } from '@utils/helpers';
 
-export default function CompanyResearch({ jobId, company }) {
+export default function CompanyResearch({ jobId, company, endpoint }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(false);
   const [open,    setOpen]    = useState(false);
@@ -18,7 +18,8 @@ export default function CompanyResearch({ jobId, company }) {
     if (data) { setOpen(!open); return; }
     setLoading(true);
     try {
-      const { data: res } = await api.get(`/jobs/${jobId}/company`);
+      const url = endpoint || `/jobs/${jobId}/company`;
+      const { data: res } = await api.get(url);
       setData(res.data);
       setOpen(true);
     } catch (err) {

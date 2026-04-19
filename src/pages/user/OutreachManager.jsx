@@ -27,6 +27,7 @@ export default function OutreachManager() {
   const [loading,       setLoading]       = useState(true);
   const [smtpStatus,    setSmtpStatus]    = useState(null);
   const [selected,      setSelected]      = useState([]);   // selected company names
+  const [selectedEmails, setSelectedEmails] = useState({}); // company -> string[] of selected email addresses
   const [previews,      setPreviews]      = useState({});   // company -> {subject, body}
   const [generating,    setGenerating]    = useState({});   // company -> bool
   const [sending,       setSending]       = useState({});   // company -> bool
@@ -136,6 +137,16 @@ export default function OutreachManager() {
       const withEmail = companies.filter(c => c.recruiterEmail).map(c => c.company);
       // In single-company mode only select that company; else select all with email
       setSelected(singleCompany ? [singleCompany] : withEmail);
+
+      // Initialize per-email selection — all emails selected by default per company
+      const emailSel = {};
+      companies.forEach(c => {
+        const contacts = c.allRecruiterContacts?.length > 0
+          ? c.allRecruiterContacts
+          : c.recruiterEmail ? [{ email: c.recruiterEmail }] : [];
+        emailSel[c.company] = contacts.map(ct => ct.email).filter(Boolean);
+      });
+      setSelectedEmails(emailSel);
     } catch {
       toast.error('Failed to load contacts');
     } finally {
@@ -226,63 +237,72 @@ export default function OutreachManager() {
   };
 
   const sendEmail = async (company) => {
-    if (!smtpStatus?.configured) {
-      toast.error('Configure your email first');
-      return;
-    }
-
     const companyData = data.companies.find(c => c.company === company);
     const preview     = previews[company];
 
-    if (!preview) {
-      toast.error('Generate email first');
-      return;
-    }
+    if (!preview) { toast.error('Generate email first'); return; }
 
-    // Collect all unique recipient emails for this company
+    // Use only selected emails for this company
     const allContacts = companyData.allRecruiterContacts?.length > 0
       ? companyData.allRecruiterContacts
       : companyData.recruiterEmail
         ? [{ email: companyData.recruiterEmail, name: companyData.recruiterName }]
         : [];
-    const recipients = [...new Set(allContacts.map(c => c.email).filter(Boolean))];
-    if (recipients.length === 0) { toast.error('No email address found'); return; }
+    const selEmails  = selectedEmails[company] || [];
+    const recipients = allContacts
+      .filter(c => c.email && selEmails.includes(c.email))
+      .map(c => ({ email: c.email, name: c.name || null }));
+
+    if (recipients.length === 0) { toast.error('Select at least one email to send to'); return; }
 
     setSending(p => ({ ...p, [company]: true }));
     try {
+      // Use template resume PDF (clean pdfkit version) if attachResume is on
+      let resumeBuffer   = undefined;
+      let resumeFilename = undefined;
+
       const optimized = optimizedResumes[company];
-      const hasOptimizedBuffer = !!(optimized?.resumeBuffer);
+      if (optimized?.resumeBuffer) {
+        // User explicitly ran ATS optimization — use that
+        resumeBuffer   = optimized.resumeBuffer;
+        resumeFilename = optimized.filename || 'resume-optimized.pdf';
+      } else if (attachResume) {
+        // Fetch the clean template resume PDF
+        try {
+          const { data: pdfRes } = await api.get('/outreach/generate-resume-pdf');
+          resumeBuffer   = pdfRes.data.resumeBuffer;
+          resumeFilename = pdfRes.data.filename;
+        } catch {
+          // Fallback: let backend attach original uploaded resume
+        }
+      }
+
       const basePayload = {
         subject:        preview.subject,
         body:           preview.body,
         company,
         jobId:          companyData.jobs[0]?._id,
-        attachResume:   !hasOptimizedBuffer && attachResume,
-        resumeBuffer:   hasOptimizedBuffer ? optimized.resumeBuffer : undefined,
-        resumeFilename: hasOptimizedBuffer ? (optimized.filename || 'resume-optimized.pdf') : undefined,
+        attachResume:   attachResume && !resumeBuffer,  // backend fallback only if PDF fetch failed
+        resumeBuffer,
+        resumeFilename,
       };
 
-      if (recipients.length === 1) {
+      // Send sequentially to each selected recipient
+      let successCount = 0;
+      for (let i = 0; i < recipients.length; i++) {
+        const { email: to, name: recruiterName } = recipients[i];
         await api.post('/outreach/send', {
           ...basePayload,
-          to:            recipients[0],
-          recruiterName: companyData.recruiterName,
-          emailId:       preview.emailId,
+          to,
+          recruiterName,
+          emailId: i === 0 ? preview.emailId : undefined,
         });
-      } else {
-        // Multiple contacts — use bulk send
-        await api.post('/outreach/bulk', {
-          emails: recipients.map(to => ({
-            ...basePayload,
-            to,
-            recruiterName: allContacts.find(c => c.email === to)?.name || null,
-          })),
-        });
+        successCount++;
+        if (i < recipients.length - 1) await new Promise(r => setTimeout(r, 600));
       }
 
       setSent(p => ({ ...p, [company]: true }));
-      const wasAttached = attachResume && hasResume;
-      toast.success(`Email sent to ${recipients.length} contact${recipients.length > 1 ? 's' : ''}${wasAttached ? ' 📎 with resume' : ''}`);
+      toast.success(`Email sent to ${successCount} recipient${successCount > 1 ? 's' : ''}${resumeBuffer ? ' with resume' : ''}`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Send failed');
     } finally {
@@ -331,6 +351,24 @@ export default function OutreachManager() {
     setSelected(prev =>
       prev.includes(company) ? prev.filter(c => c !== company) : [...prev, company]
     );
+  };
+
+  const toggleEmailSelect = (company, email) => {
+    setSelectedEmails(prev => {
+      const cur = prev[company] || [];
+      return {
+        ...prev,
+        [company]: cur.includes(email) ? cur.filter(e => e !== email) : [...cur, email],
+      };
+    });
+  };
+
+  const toggleAllEmailsForCompany = (company, allEmails) => {
+    setSelectedEmails(prev => {
+      const cur = prev[company] || [];
+      const allSelected = allEmails.every(e => cur.includes(e));
+      return { ...prev, [company]: allSelected ? [] : [...allEmails] };
+    });
   };
 
   const selectAll = () => {
@@ -598,49 +636,94 @@ export default function OutreachManager() {
                       )}
                     </div>
 
-                    {/* HR Contacts — show all from allRecruiterContacts, fall back to single recruiterEmail */}
-                    <div className="mt-1.5 space-y-1">
-                      {(company.allRecruiterContacts?.length > 0
+                    {/* HR Contacts — per-email checkboxes */}
+                    {(() => {
+                      const contacts = company.allRecruiterContacts?.length > 0
                         ? company.allRecruiterContacts
                         : company.recruiterEmail
                           ? [{ email: company.recruiterEmail, name: company.recruiterName, confidence: company.recruiterConfidence, source: company.recruiterSource, linkedin: company.recruiterLinkedIn }]
-                          : []
-                      ).map((contact, ci) => (
-                        <div key={ci} className="flex items-center gap-2 flex-wrap">
-                          <div className="flex items-center gap-1">
-                            <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                            <span className="text-sm text-blue-600 font-medium">{contact.email}</span>
-                            <button
-                              onClick={() => copyEmail(contact.email)}
-                              className="p-0.5 text-gray-400 hover:text-gray-600"
-                            >
-                              {copied === contact.email
-                                ? <Check className="w-3.5 h-3.5 text-green-500" />
-                                : <Copy className="w-3.5 h-3.5" />
-                              }
-                            </button>
-                          </div>
-                          {contact.name && (
-                            <span className="text-xs text-gray-500">{contact.name}</span>
+                          : [];
+                      const allEmails   = contacts.map(c => c.email).filter(Boolean);
+                      const selEmails   = selectedEmails[company.company] || [];
+                      const selCount    = allEmails.filter(e => selEmails.includes(e)).length;
+                      const allSelected = selCount === allEmails.length;
+                      return (
+                        <div className="mt-1.5 space-y-1">
+                          {allEmails.length > 1 && (
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-[10px] text-gray-400">
+                                {selCount}/{allEmails.length} selected — click to toggle
+                              </span>
+                              <button
+                                onClick={() => toggleAllEmailsForCompany(company.company, allEmails)}
+                                className="text-[10px] text-blue-600 hover:underline font-semibold"
+                              >
+                                {allSelected ? 'Deselect all' : 'Select all'}
+                              </button>
+                            </div>
                           )}
-                          {contact.confidence > 0 && (
-                            <span className={cn(
-                              'badge text-xs',
-                              contact.confidence >= 70 ? 'badge-green' :
-                              contact.confidence >= 40 ? 'badge-amber' : 'badge-gray'
-                            )}>
-                              {contact.confidence}% confidence
-                            </span>
-                          )}
-                          {contact.linkedin && (
-                            <a href={contact.linkedin} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-0.5 text-xs text-blue-500 hover:text-blue-700">
-                              <Linkedin className="w-3 h-3" />
-                            </a>
-                          )}
+                          {contacts.map((contact, ci) => {
+                            const isSelected = selEmails.includes(contact.email);
+                            return (
+                              <div
+                                key={ci}
+                                onClick={() => toggleEmailSelect(company.company, contact.email)}
+                                className={cn(
+                                  'flex items-center gap-2 flex-wrap px-2 py-1 rounded-lg border cursor-pointer transition-all select-none',
+                                  isSelected
+                                    ? 'bg-blue-50 border-blue-200'
+                                    : 'bg-gray-50 border-gray-200 opacity-50'
+                                )}
+                              >
+                                {/* Checkbox */}
+                                <div className={cn(
+                                  'w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
+                                  isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
+                                )}>
+                                  {isSelected && (
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                  <span className={cn('text-sm font-medium', isSelected ? 'text-blue-600' : 'text-gray-400 line-through')}>{contact.email}</span>
+                                  <button
+                                    onClick={e => { e.stopPropagation(); copyEmail(contact.email); }}
+                                    className="p-0.5 text-gray-400 hover:text-gray-600"
+                                  >
+                                    {copied === contact.email
+                                      ? <Check className="w-3.5 h-3.5 text-green-500" />
+                                      : <Copy className="w-3.5 h-3.5" />
+                                    }
+                                  </button>
+                                </div>
+                                {contact.name && (
+                                  <span className="text-xs text-gray-500">{contact.name}</span>
+                                )}
+                                {contact.confidence > 0 && (
+                                  <span className={cn(
+                                    'badge text-xs',
+                                    contact.confidence >= 70 ? 'badge-green' :
+                                    contact.confidence >= 40 ? 'badge-amber' : 'badge-gray'
+                                  )}>
+                                    {contact.confidence}% confidence
+                                  </span>
+                                )}
+                                {contact.linkedin && (
+                                  <a href={contact.linkedin} target="_blank" rel="noopener noreferrer"
+                                    onClick={e => e.stopPropagation()}
+                                    className="flex items-center gap-0.5 text-xs text-blue-500 hover:text-blue-700">
+                                    <Linkedin className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()}
 
                     {/* Careers page link */}
                     {company.careerPageUrl && (
@@ -685,21 +768,27 @@ export default function OutreachManager() {
                       </button>
                     ) : (
                       <>
-                        <button
-                          onClick={() => sendEmail(company.company)}
-                          disabled={sending[company.company] || sent[company.company] || !smtpStatus?.configured}
-                          className={cn(
-                            'btn btn-sm',
-                            sent[company.company] ? 'btn-secondary opacity-60' : 'btn-primary'
-                          )}
-                        >
-                          {sending[company.company]
-                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : sent[company.company]
-                              ? <><CheckCircle className="w-4 h-4" /> Sent</>
-                              : <><Send className="w-4 h-4" /> Send</>
-                          }
-                        </button>
+                        {(() => {
+                          const selCount = (selectedEmails[company.company] || []).length;
+                          return (
+                            <button
+                              onClick={() => sendEmail(company.company)}
+                              disabled={sending[company.company] || sent[company.company] || selCount === 0}
+                              className={cn(
+                                'btn btn-sm',
+                                sent[company.company] ? 'btn-secondary opacity-60' : 'btn-primary'
+                              )}
+                              title={selCount === 0 ? 'Select at least one email' : `Send to ${selCount} email${selCount > 1 ? 's' : ''}`}
+                            >
+                              {sending[company.company]
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : sent[company.company]
+                                  ? <><CheckCircle className="w-4 h-4" /> Sent</>
+                                  : <><Send className="w-4 h-4" /> Send{selCount > 1 ? ` (${selCount})` : ''}</>
+                              }
+                            </button>
+                          );
+                        })()}
                         <button
                           onClick={() => setExpandedPrev(p => ({ ...p, [company.company]: !p[company.company] }))}
                           className="btn btn-secondary btn-sm"
