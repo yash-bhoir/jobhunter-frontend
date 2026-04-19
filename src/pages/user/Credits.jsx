@@ -8,15 +8,17 @@ import { api }        from '@utils/axios';
 import { cn }         from '@utils/helpers';
 import { fDateTime }  from '@utils/formatters';
 
-// Maps CREDIT_COSTS action key → breakdown field stored in DB
-const BREAKDOWN_MAP = {
-  JOB_SEARCH:          { label: 'Job Search',            field: 'searches',     cost: 10 },
-  HUNTER_LOOKUP:       { label: 'HR Email Lookup',        field: 'emailLookups', cost: 15 },
-  AI_EMAIL:            { label: 'AI Email Generation',    field: 'aiEmails',     cost: 5  },
-  RESUME_PARSE:        { label: 'Resume Parse / Optimise',field: 'resumeParses', cost: 20 },
-  EMAIL_SEND:          { label: 'Email Send',             field: 'emailsSent',   cost: 2  },
-  EXCEL_EXPORT:        { label: 'Excel Export',           field: 'exports',      cost: 5  },
+// Maps CREDIT_COSTS action key → breakdown field stored in DB (costs loaded from API)
+const BREAKDOWN_BASE = {
+  JOB_SEARCH:    { label: 'Job Search',             field: 'searches'    },
+  HUNTER_LOOKUP: { label: 'HR Email Lookup',         field: 'emailLookups'},
+  AI_EMAIL:      { label: 'AI Email Generation',     field: 'aiEmails'    },
+  RESUME_PARSE:  { label: 'Resume Parse / Optimise', field: 'resumeParses'},
+  EMAIL_SEND:    { label: 'Email Send',               field: 'emailsSent'  },
+  EXCEL_EXPORT:  { label: 'Excel Export',             field: 'exports'     },
 };
+
+const DEFAULT_COSTS = { JOB_SEARCH: 10, HUNTER_LOOKUP: 15, AI_EMAIL: 5, RESUME_PARSE: 20, EMAIL_SEND: 2, EXCEL_EXPORT: 5 };
 
 const TOPUP_PACKS = [
   { name: 'Starter', credits: 50,  price: 99,  popular: false },
@@ -40,13 +42,25 @@ export default function Credits() {
   const { credits, remaining, usagePct, refreshCredits } = useCredits();
   const toast                          = useToast();
 
-  const [activity,   setActivity]   = useState([]);
-  const [actLoading, setActLoading] = useState(true);
-  const [buying,     setBuying]     = useState('');
+  const [activity,    setActivity]    = useState([]);
+  const [actLoading,  setActLoading]  = useState(true);
+  const [buying,      setBuying]      = useState('');
+  const [liveCosts,   setLiveCosts]   = useState(DEFAULT_COSTS);
 
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
 
+  // Build breakdown map with live costs from admin config
+  const BREAKDOWN_MAP = Object.fromEntries(
+    Object.entries(BREAKDOWN_BASE).map(([key, meta]) => [
+      key, { ...meta, cost: liveCosts[key] ?? DEFAULT_COSTS[key] ?? 0 }
+    ])
+  );
+
   useEffect(() => {
+    api.get('/billing/plans')
+      .then(r => { if (r.data.data?.creditCosts) setLiveCosts(r.data.data.creditCosts); })
+      .catch(() => {});
+
     api.get('/user/activity?limit=15')
       .then(r => setActivity(r.data.data?.logs || []))
       .catch(() => {})

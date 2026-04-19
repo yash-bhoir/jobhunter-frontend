@@ -98,8 +98,23 @@ export default function Billing() {
   const [histLoading,  setHistLoading]  = useState(true);
   const [cancelling,   setCancelling]   = useState(false);
   const [showCancel,   setShowCancel]   = useState(false);
+  const [plans,        setPlans]        = useState(PLANS); // live prices from admin
 
   useEffect(() => {
+    // Fetch live prices from admin config
+    api.get('/billing/plans')
+      .then(r => {
+        const data = r.data.data;
+        if (!data) return;
+        setPlans(prev => prev.map(p => {
+          if (p.id === 'free') return { ...p, credits: data.freeCredits  || p.credits };
+          if (p.id === 'pro')  return { ...p, price: data.proPlanPrice  ?? p.price, credits: data.proCredits  || p.credits };
+          if (p.id === 'team') return { ...p, price: data.teamPlanPrice ?? p.price, credits: data.teamCredits || p.credits };
+          return p;
+        }));
+      })
+      .catch(() => {});
+
     api.get('/billing/history')
       .then(r  => setHistory(r.data.data || []))
       .catch(() => {})
@@ -116,7 +131,7 @@ export default function Billing() {
       const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
       if (!razorpayKey) { toast.error('Payment gateway not configured yet.'); return; }
 
-      const planConfig = PLANS.find(p => p.id === plan);
+      const planConfig = plans.find(p => p.id === plan);
       const { data }   = await api.post('/billing/create-order', { plan, amount: planConfig.price });
       const order      = data.data;
 
@@ -226,10 +241,10 @@ export default function Billing() {
 
       {/* Plan cards */}
       <div className="grid lg:grid-cols-3 gap-6">
-        {PLANS.map(plan => {
+        {plans.map(plan => {
           const isCurrent = currentPlan === plan.id;
-          const planIdx   = PLANS.findIndex(p => p.id === plan.id);
-          const curIdx    = PLANS.findIndex(p => p.id === currentPlan);
+          const planIdx   = plans.findIndex(p => p.id === plan.id);
+          const curIdx    = plans.findIndex(p => p.id === currentPlan);
           const isUpgrade = planIdx > curIdx;
 
           return (

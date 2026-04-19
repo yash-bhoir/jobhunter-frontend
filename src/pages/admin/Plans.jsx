@@ -62,9 +62,12 @@ export default function AdminPlans() {
     try {
       await api.post('/admin/config/bulk', {
         configs: [
-          { key: 'proPlanPrice',  value: parseInt(prices.proPlanPrice),  category: 'billing'  },
-          { key: 'teamPlanPrice', value: parseInt(prices.teamPlanPrice), category: 'billing'  },
-          { key: 'creditCosts',   value: credits,                        category: 'credits'  },
+          { key: 'proPlanPrice',   value: parseInt(prices.proPlanPrice),  category: 'billing' },
+          { key: 'teamPlanPrice',  value: parseInt(prices.teamPlanPrice), category: 'billing' },
+          { key: 'creditCosts',    value: credits,                        category: 'credits' },
+          { key: 'freePlanLimits', value: { creditsPerMonth: parseInt(planCredits.free),  searchesPerDay: 2   }, category: 'limits' },
+          { key: 'proPlanLimits',  value: { creditsPerMonth: parseInt(planCredits.pro),   searchesPerDay: 999 }, category: 'limits' },
+          { key: 'teamPlanLimits', value: { creditsPerMonth: parseInt(planCredits.team),  searchesPerDay: 999 }, category: 'limits' },
         ],
       });
       toast.success('Plans & credits saved!');
