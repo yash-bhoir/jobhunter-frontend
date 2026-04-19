@@ -162,10 +162,7 @@ function AdminOtpScreen({ userId, onBack }) {
         >
           <ArrowLeft className="w-4 h-4" /> Back to login
         </button>
-        {resent
-          ? <span className="text-emerald-600 font-medium">Code resent ✓</span>
-          : <span className="text-gray-400 text-xs">Didn&apos;t receive it? Check spam</span>
-        }
+        <span className="text-gray-400 text-xs">Didn&apos;t receive it? Check spam</span>
       </div>
     </div>
   );
