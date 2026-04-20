@@ -38,7 +38,8 @@ export default function UserLayout() {
       </div>
 
       {/* Mobile bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white/95 backdrop-blur-sm border-t border-gray-100 safe-area-inset-bottom">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white/95 backdrop-blur-sm border-t border-gray-100"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-around px-2 py-1">
           {MOBILE_NAV.map(({ to, label, icon: Icon }) => (
             <NavLink

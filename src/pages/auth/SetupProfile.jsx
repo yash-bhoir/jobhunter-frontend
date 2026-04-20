@@ -61,7 +61,7 @@ function StepIndicator({ currentStep }) {
                 ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-110' : ''}
                 ${!done && !active ? 'bg-gray-100 text-gray-400' : ''}
               `}>
-                {done ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-4.5 h-4.5" />}
+                {done ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-[18px] h-[18px]" />}
               </div>
               <span className={`mt-1.5 text-xs font-semibold whitespace-nowrap hidden sm:block
                 ${active ? 'text-blue-600' : done ? 'text-emerald-600' : 'text-gray-400'}`}>
@@ -132,7 +132,7 @@ function StepBasic({ draft, onNext }) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
         <Field label="First name" required error={errors.firstName?.message}>
           <input {...register('firstName')} className={`input ${errors.firstName ? 'input-error' : ''}`}
             placeholder="Yash" autoFocus />

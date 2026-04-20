@@ -78,7 +78,7 @@ export default function Register() {
         {/* Logo + name */}
         <div className="relative z-10 flex items-center gap-2.5 mb-5">
           <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
-            <Briefcase className="w-4.5 h-4.5 text-white" />
+            <Briefcase className="w-[18px] h-[18px] text-white" />
           </div>
           <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
         </div>
@@ -103,7 +103,7 @@ export default function Register() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
             {/* Name row */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
               <div>
                 <label className="label">First name</label>
                 <input

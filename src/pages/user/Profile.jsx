@@ -256,7 +256,7 @@ export default function Profile() {
               {activeTab === 'basic' && (
                 <div className="p-6 space-y-5">
                   <SectionTitle icon={User} label="Basic Information" />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
                     <Field label="First Name" error={errors.firstName?.message}>
                       <input {...register('firstName')} className={cn('input', errors.firstName && 'input-error')} placeholder="Yash" />
                     </Field>
@@ -267,7 +267,7 @@ export default function Profile() {
                   <Field label="Email">
                     <input value={user?.email || ''} disabled className="input bg-gray-50 text-gray-400 cursor-not-allowed" />
                   </Field>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
                     <Field label="Phone">
                       <div className="relative">
                         <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -301,7 +301,7 @@ export default function Profile() {
               {activeTab === 'career' && (
                 <div className="p-6 space-y-5">
                   <SectionTitle icon={Briefcase} label="Career Information" />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
                     <Field label="Current Role">
                       <input {...register('currentRole')} className="input" placeholder="Software Engineer" />
                     </Field>

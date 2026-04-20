@@ -563,7 +563,7 @@ export default function Outreach() {
                       {/* Row */}
                       <div className="flex items-start gap-3 px-5 py-4 hover:bg-slate-50 transition-colors group">
                         <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                          <Mail className="w-4.5 h-4.5 text-blue-500" style={{ width: '18px', height: '18px' }} />
+                          <Mail className="w-[18px] h-[18px] text-blue-500" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
@@ -660,17 +660,17 @@ export default function Outreach() {
               className="fixed inset-4 sm:inset-8 lg:inset-16 z-[1101] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
             >
               {/* Modal header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-                <div>
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex-shrink-0 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                    <Code className="w-4 h-4 text-violet-600" />
+                    <Code className="w-4 h-4 text-violet-600 flex-shrink-0" />
                     LaTeX Resume Template
                   </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">
                     Sent with email to {latexModal.to} · {fDateTime(latexModal.sentAt || latexModal.createdAt)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => copyLatex(latexModal.latexTemplate)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
@@ -686,7 +686,7 @@ export default function Outreach() {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 transition-colors"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    Download .tex
+                    <span className="hidden xs:inline">Download</span> .tex
                   </button>
                   <a
                     href={`https://www.overleaf.com/docs?snip_uri=data:application/x-tex;base64,${btoa(latexModal.latexTemplate)}`}
@@ -695,9 +695,9 @@ export default function Outreach() {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    Open in Overleaf
+                    <span className="hidden xs:inline">Open in </span>Overleaf
                   </a>
-                  <button onClick={() => setLatexModal(null)} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400">
+                  <button onClick={() => setLatexModal(null)} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 flex-shrink-0">
                     <X className="w-4 h-4" />
                   </button>
                 </div>

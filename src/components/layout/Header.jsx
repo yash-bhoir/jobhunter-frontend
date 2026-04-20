@@ -98,13 +98,13 @@ export default function Header({ onMenuClick }) {
           className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
           aria-label="Toggle dark mode"
         >
-          {isDark ? <Sun className="w-4.5 h-4.5" style={{width:'18px',height:'18px'}} />
-                  : <Moon className="w-4.5 h-4.5" style={{width:'18px',height:'18px'}} />}
+          {isDark ? <Sun className="w-[18px] h-[18px]" />
+                  : <Moon className="w-[18px] h-[18px]" />}
         </button>
 
         {/* Notifications */}
         <button className="relative p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
-          <Bell className="w-4.5 h-4.5" style={{width:'18px',height:'18px'}} />
+          <Bell className="w-[18px] h-[18px]" />
         </button>
 
         {/* Avatar + dropdown */}

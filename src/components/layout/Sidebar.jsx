@@ -141,7 +141,7 @@ export default function Sidebar({ open, onClose }) {
           open ? 'px-4 gap-3' : 'justify-center px-2'
         )}>
           <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 shadow-sm shadow-blue-200 flex-shrink-0">
-            <Sparkles className="w-4.5 h-4.5 text-white" style={{width:'18px',height:'18px'}} />
+            <Sparkles className="w-[18px] h-[18px] text-white" />
           </div>
           {open && (
             <div className="min-w-0">

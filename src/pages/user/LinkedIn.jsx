@@ -284,7 +284,7 @@ export default function LinkedIn() {
           >
             <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4" style={{ boxShadow: '0 2px 16px -2px rgba(0,0,0,0.07)' }}>
               <h2 className="font-semibold text-gray-900 text-sm">Add Job Manually</h2>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
                 <div><label className="label">Job Title *</label><input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Senior React Developer" className="input" /></div>
                 <div><label className="label">Company *</label><input value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} placeholder="Infosys" className="input" /></div>
                 <div><label className="label">Location</label><input value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} placeholder="Mumbai, India" className="input" /></div>

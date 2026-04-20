@@ -38,10 +38,10 @@
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
 
-  /* Ensure all interactive elements have a minimum 44px tap target on mobile */
+  /* Ensure all interactive elements have a minimum 44px tap target on mobile (WCAG 2.5.5) */
   @media (max-width: 1023px) {
     button, a, [role="button"] {
-      min-height: 36px;
+      min-height: 44px;
     }
   }
 

@@ -355,8 +355,8 @@ export default function Recruiters() {
         historyOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
       )}>
         <div
-          className="bg-white rounded-none lg:rounded-2xl border-l lg:border border-gray-100 flex flex-col overflow-hidden w-72 lg:sticky lg:top-4"
-          style={{ height: 'calc(100vh - 7.5rem)', maxHeight: 'calc(100vh - 5rem)', boxShadow: '0 4px 24px -4px rgba(0,0,0,0.08)' }}
+          className="bg-white rounded-none lg:rounded-2xl border-l lg:border border-gray-100 flex flex-col overflow-hidden w-72 lg:sticky lg:top-4 h-full lg:h-auto lg:max-h-[calc(100vh-5rem)]"
+          style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.08)' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 flex-shrink-0">

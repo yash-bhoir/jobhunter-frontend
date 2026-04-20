@@ -220,7 +220,7 @@ export default function Login() {
           <div className="absolute -top-8 -right-8 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
           <div className="relative z-10 flex items-center gap-2.5 mb-4">
             <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
-              <Briefcase className="w-4.5 h-4.5 text-white" />
+              <Briefcase className="w-[18px] h-[18px] text-white" />
             </div>
             <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
           </div>
@@ -305,7 +305,7 @@ export default function Login() {
 
         <div className="relative z-10 flex items-center gap-2.5 mb-6">
           <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
-            <Briefcase className="w-4.5 h-4.5 text-white" />
+            <Briefcase className="w-[18px] h-[18px] text-white" />
           </div>
           <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
         </div>
