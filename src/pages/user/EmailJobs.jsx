@@ -102,8 +102,9 @@ export default function EmailJobs() {
   const [selected,       setSelected]       = useState(null);
   const [fetchLoading,   setFetchLoading]   = useState(false);
   const [fetchResult,    setFetchResult]    = useState(null);
-  const [gmailConnected, setGmailConnected] = useState(null);
-  const [gmailEmail,     setGmailEmail]     = useState('');
+  const [gmailConnected,  setGmailConnected]  = useState(null); // null = loading
+  const [gmailEmail,      setGmailEmail]      = useState('');
+  const [lastFetchedAt,   setLastFetchedAt]   = useState(null);
   const [maxEmails,      setMaxEmails]      = useState(20);
   const [daysBack,       setDaysBack]       = useState(30);
   const [showDebug,      setShowDebug]      = useState(false);
@@ -112,8 +113,10 @@ export default function EmailJobs() {
   useEffect(() => {
     api.get('/linkedin/gmail/status')
       .then(r => {
-        setGmailConnected(r.data.data?.connected || false);
-        setGmailEmail(r.data.data?.email || '');
+        const d = r.data.data;
+        setGmailConnected(d?.connected || false);
+        setGmailEmail(d?.email || '');
+        setLastFetchedAt(d?.lastFetchedAt || null);
       })
       .catch(() => setGmailConnected(false));
   }, []);
@@ -149,15 +152,17 @@ export default function EmailJobs() {
       const { data } = await api.post('/linkedin/gmail/fetch', { maxResults: maxEmails, daysBack });
       setFetchResult(data.data);
       addDebugLog('success', 'Fetch response', data.data);
-      if (data.data?.saved > 0) {
-        toast.success(`Fetched ${data.data.saved} new jobs from email!`);
+      const d = data.data;
+      if (d?.lastFetchedAt) setLastFetchedAt(d.lastFetchedAt);
+      if (d?.saved > 0) {
+        toast.success(`Fetched ${d.saved} new jobs from email!`);
         setPage(1);
         loadJobs();
-      } else if (data.data?.fetched === 0) {
-        toast.info('No job alert emails found in Gmail');
-        addDebugLog('warn', 'No emails found — check your Gmail has job alert subscriptions', null);
+      } else if (d?.fetched === 0) {
+        toast.info('No job alert emails found — try increasing the time range or check your Gmail subscriptions');
+        addDebugLog('warn', 'No emails matched the query. Try "All time" or subscribe to job alerts on LinkedIn/Naukri/Indeed.', null);
       } else {
-        toast.info(`Found ${data.data?.fetched} jobs in emails, all already saved`);
+        toast.info(`Found ${d?.fetched} jobs in emails — all already saved`);
       }
     } catch (err) {
       const code = err.response?.data?.code;
@@ -165,6 +170,8 @@ export default function EmailJobs() {
       if (code === 'GMAIL_TOKEN_EXPIRED') {
         setGmailConnected(false);
         toast.error('Gmail session expired — please reconnect your Gmail.');
+      } else if (code === 'RATE_LIMITED') {
+        toast.error(msg);
       } else {
         toast.error(msg);
       }
@@ -192,7 +199,9 @@ export default function EmailJobs() {
             Email Job Alerts
           </h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {gmailEmail ? `Reading from ${gmailEmail}` : 'Jobs imported from Gmail job alert emails'} · {total} saved
+            {gmailEmail ? `Reading from ${gmailEmail}` : 'Jobs imported from Gmail job alert emails'}
+            {total > 0 && ` · ${total} saved`}
+            {lastFetchedAt && ` · Last fetched ${fAgo(lastFetchedAt)}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -216,7 +225,7 @@ export default function EmailJobs() {
         </div>
       </motion.div>
 
-      {/* Gmail not connected */}
+      {/* Gmail not connected (false = confirmed disconnected, null = still loading) */}
       {gmailConnected === false && (
         <motion.div variants={fadeUp} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
@@ -465,11 +474,15 @@ export default function EmailJobs() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-1.5">
-                        {job.recruiterEmail && (
+                        {job.recruiterEmail ? (
                           <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                            <Mail className="w-3 h-3" /> HR Found
+                            <Mail className="w-3 h-3" /> HR Email
                           </span>
-                        )}
+                        ) : job.careerPageUrl ? (
+                          <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                            <ExternalLink className="w-3 h-3" /> Career Page
+                          </span>
+                        ) : null}
                         {job.url && (
                           <a
                             href={job.url}
