@@ -449,15 +449,24 @@ export default function JobDetailPanel({
         const { data } = await api.post(`/linkedin/jobs/${job._id}/find-hr`);
         const emails    = data.data.emails    || [];
         const employees = data.data.employees || [];
-        const patch = {};
+        const patch = {
+          ...(data.data.careerPageUrl  && { careerPageUrl:  data.data.careerPageUrl  }),
+          ...(data.data.linkedinUrl    && { linkedinUrl:    data.data.linkedinUrl    }),
+          ...(data.data.employeeSearch && { employeeSearch: data.data.employeeSearch }),
+        };
         if (emails.length > 0) {
           patch.recruiterEmail       = emails[0].email;
           patch.recruiterName        = emails[0].name;
           patch.allRecruiterContacts = emails;
         }
         if (employees.length > 0) patch.employees = employees;
-        if (Object.keys(patch).length) updateJob(patch);
-        toast.success(`Found ${emails.length} HR emails · ${employees.length} employees`);
+        updateJob(patch);
+        const msg = emails.length > 0
+          ? `Found ${emails.length} HR emails · ${employees.length} employees`
+          : data.data.careerPageUrl
+            ? 'No verified emails — career page & LinkedIn links added'
+            : 'No HR contacts found for this company';
+        toast.success(msg);
       } else {
         // Results or Geo — use universal recruiter lookup
         const { data }  = await api.post('/recruiters/lookup', { company: job.company, jobId: job._id });
