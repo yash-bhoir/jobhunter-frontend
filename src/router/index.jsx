@@ -24,6 +24,7 @@ import Profile        from '@pages/user/Profile';
 import Credits        from '@pages/user/Credits';
 import Billing        from '@pages/user/Billing';
 import LinkedIn       from '@pages/user/LinkedIn';
+import EmailJobs      from '@pages/user/EmailJobs';
 import MapSearch      from '@pages/user/MapSearch';
 import Insights       from '@pages/user/Insights';
 
@@ -78,6 +79,7 @@ export default function AppRouter() {
         <Route path="/credits"          element={<Credits />} />
         <Route path="/billing"          element={<Billing />} />
         <Route path="/linkedin"         element={<LinkedIn />} />
+        <Route path="/email-jobs"       element={<EmailJobs />} />
         <Route path="/map-search"       element={<MapSearch />} />
         <Route path="/insights"         element={<Insights />} />
       </Route>
