@@ -268,11 +268,6 @@ export default function LinkedIn() {
         )}
       </motion.div>
 
-      {/* Gmail section */}
-      <motion.div variants={fadeUp}>
-        <GmailAlertSection onFetched={() => { setPage(1); fetchJobs(); }} />
-      </motion.div>
-
       {/* Add manually */}
       <AnimatePresence>
         {showAdd && (
