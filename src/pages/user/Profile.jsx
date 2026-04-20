@@ -40,7 +40,7 @@ const TABS = [
   { id: 'career', label: 'Career',     icon: Briefcase},
   { id: 'skills', label: 'Skills',     icon: Target   },
   { id: 'resume', label: 'Resume',     icon: Upload   },
-  { id: 'smtp',   label: 'Email',      icon: Mail     },
+  { id: 'email',  label: 'Email',      icon: Mail     },
 ];
 
 const fadeIn = {
@@ -244,8 +244,8 @@ export default function Profile() {
 
       {/* ── Tab content ──────────────────────────────────────────── */}
       <AnimatePresence mode="wait">
-        {activeTab === 'smtp' ? (
-          <motion.div key="smtp" {...fadeIn}><SMTPSetup /></motion.div>
+        {activeTab === 'email' ? (
+          <motion.div key="email" {...fadeIn}><GmailConnect /></motion.div>
         ) : (
           <motion.form key={activeTab} {...fadeIn} onSubmit={handleSubmit(onSubmit)}>
             <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
@@ -510,7 +510,178 @@ function Field({ label, error, children }) {
   );
 }
 
-// ── SMTP Setup ───────────────────────────────────────────────────────
+// ── Gmail OAuth Connect ──────────────────────────────────────────────
+function GmailConnect() {
+  const toast = useToast();
+  const [status,       setStatus]       = useState(null);
+  const [connecting,   setConnecting]   = useState(false);
+  const [disconnecting,setDisconnecting]= useState(false);
+  const [searchParams] = useSearchParams();
+
+  const fetchStatus = async () => {
+    try {
+      const { data } = await api.get('/linkedin/gmail/status');
+      setStatus(data.data);
+    } catch { setStatus({ connected: false }); }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    const result = searchParams.get('gmail');
+    if (result === 'connected') { toast.success('Gmail connected!'); fetchStatus(); }
+    if (result === 'error')     { toast.error('Gmail connection failed. Please try again.'); }
+  }, []);
+
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      const { data } = await api.get('/linkedin/gmail/connect');
+      window.location.href = data.data.url;
+    } catch (err) {
+      toast.error('Failed to start Gmail connection');
+      setConnecting(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!confirm('Disconnect Gmail? Outreach emails will stop working.')) return;
+    setDisconnecting(true);
+    try {
+      await api.delete('/linkedin/gmail/disconnect');
+      toast.success('Gmail disconnected');
+      fetchStatus();
+    } catch { toast.error('Failed to disconnect'); }
+    finally { setDisconnecting(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Status card */}
+      <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
+        style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}>
+        <div className="px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+              <Mail className="w-5 h-5 text-red-500" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900">Gmail Connection</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Used for sending outreach & reading job alerts</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5">
+          {status?.connected ? (
+            <div className="space-y-4">
+              {/* Connected state */}
+              <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                  {status.email?.[0]?.toUpperCase() || 'G'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-emerald-900 truncate">{status.email}</p>
+                    <span className="badge badge-green text-xs flex-shrink-0">Connected</span>
+                  </div>
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    {status.connectedAt ? `Since ${new Date(status.connectedAt).toLocaleDateString()}` : 'Active'}
+                  </p>
+                </div>
+                <button onClick={disconnect} disabled={disconnecting}
+                  className="btn btn-danger btn-sm flex-shrink-0">
+                  {disconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Disconnect'}
+                </button>
+              </div>
+
+              {/* What it enables */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  { icon: '✉️', title: 'Send outreach emails', desc: 'Emails sent directly from your Gmail — no app password needed' },
+                  { icon: '📥', title: 'Fetch job alerts', desc: 'Auto-import jobs from LinkedIn, Naukri, Indeed & more' },
+                ].map(f => (
+                  <div key={f.title} className="flex gap-2.5 p-3 bg-gray-50 rounded-xl">
+                    <span className="text-lg">{f.icon}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{f.title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{f.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Disconnected state */}
+              <div className="flex items-center gap-2.5 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl">
+                <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <p className="text-sm text-amber-700 font-medium">Gmail not connected — outreach & email alerts are disabled</p>
+              </div>
+
+              <button onClick={connect} disabled={connecting}
+                className="btn btn-primary w-full py-3 text-base gap-3">
+                {connecting ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Redirecting to Google…</>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                      <path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                      <path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Connect Gmail
+                  </>
+                )}
+              </button>
+
+              {/* Benefits */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {[
+                  { icon: '🔐', text: 'No passwords stored' },
+                  { icon: '⚡', text: 'One-click setup' },
+                  { icon: '🔄', text: 'Disconnect anytime' },
+                ].map(b => (
+                  <div key={b.text} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl">
+                    <span>{b.icon}</span>
+                    <span className="text-xs font-medium text-gray-600">{b.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
+        style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}>
+        <div className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="w-4 h-4 text-blue-600" />
+            <p className="text-sm font-bold text-gray-900">How it works</p>
+          </div>
+          <ol className="space-y-2">
+            {[
+              'Click "Connect Gmail" — you\'ll be redirected to Google\'s secure login',
+              'Authorize JobHunter to send emails and read job alert emails on your behalf',
+              'We store an OAuth token — your password is never seen or stored',
+              'Outreach emails are sent from YOUR Gmail address directly',
+              'Job alerts from LinkedIn, Naukri, Indeed etc. are auto-imported',
+            ].map((step, i) => (
+              <li key={i} className="flex gap-2.5 text-sm text-gray-600">
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SMTP Setup (kept for legacy accounts) ────────────────────────────
 function SMTPSetup() {
   const toast = useToast();
   const [status,   setStatus]   = useState(null);
