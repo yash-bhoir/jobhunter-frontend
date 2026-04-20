@@ -37,6 +37,7 @@ const FETCH_INTERVALS = [
   { label: 'Last 7 days',  value: 7  },
   { label: 'Last 14 days', value: 14 },
   { label: 'Last 30 days', value: 30 },
+  { label: 'Last 60 days', value: 60 },
   { label: 'All time',     value: 0  },
 ];
 
@@ -104,6 +105,7 @@ export default function EmailJobs() {
   const [gmailConnected, setGmailConnected] = useState(null);
   const [gmailEmail,     setGmailEmail]     = useState('');
   const [maxEmails,      setMaxEmails]      = useState(20);
+  const [daysBack,       setDaysBack]       = useState(30);
   const [showDebug,      setShowDebug]      = useState(false);
   const [debugLog,       setDebugLog]       = useState([]);
 
@@ -144,7 +146,7 @@ export default function EmailJobs() {
     setFetchLoading(true); setFetchResult(null);
     addDebugLog('info', `Fetching from Gmail (maxEmails: ${maxEmails})...`, null);
     try {
-      const { data } = await api.post('/linkedin/gmail/fetch', { maxResults: maxEmails });
+      const { data } = await api.post('/linkedin/gmail/fetch', { maxResults: maxEmails, daysBack });
       setFetchResult(data.data);
       addDebugLog('success', 'Fetch response', data.data);
       if (data.data?.saved > 0) {
@@ -252,12 +254,13 @@ export default function EmailJobs() {
               {FETCH_INTERVALS.map(f => (
                 <button
                   key={f.value}
-                  onClick={() => {
-                    setSourceFilter('');
-                    setStatusFilter('new');
-                    setPage(1);
-                  }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white text-gray-600 border-gray-200 hover:border-blue-300 transition-all"
+                  onClick={() => setDaysBack(f.value)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                    daysBack === f.value
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                  )}
                 >
                   {f.label}
                 </button>
@@ -265,7 +268,7 @@ export default function EmailJobs() {
             </div>
           </div>
           <p className="text-xs text-blue-500 mt-2">
-            Gmail will be searched for job alert emails from LinkedIn, Naukri, Indeed, Foundit, Internshala, TimesJobs, Shine, Instahyre, Hirist.
+            Searches <strong>all job-related emails</strong> in your Gmail — any portal, any sender — using broad keywords like "job alert", "hiring", "job opening", "vacancy" etc.
           </p>
         </motion.div>
       )}
