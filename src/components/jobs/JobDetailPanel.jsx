@@ -367,9 +367,9 @@ export default function JobDetailPanel({
     if (mode === 'geo') setSaved(initialSaved);
   }, [initialJob?._id]);
 
-  // Auto-fetch description for LinkedIn jobs that don't have one
+  // Auto-fetch description for LinkedIn jobs that don't have one AND have a URL
   useEffect(() => {
-    if (mode !== 'linkedin' || !initialJob?._id || initialJob?.description) return;
+    if (mode !== 'linkedin' || !initialJob?._id || initialJob?.description || !initialJob?.url) return;
     setDescLoading(true);
     api.get(`/linkedin/jobs/${initialJob._id}/description`)
       .then(({ data }) => {
@@ -378,6 +378,17 @@ export default function JobDetailPanel({
       .catch(() => {})
       .finally(() => setDescLoading(false));
   }, [initialJob?._id, mode]);
+
+  const retryFetchDescription = () => {
+    if (!job?._id || !job?.url) return;
+    setDescLoading(true);
+    api.get(`/linkedin/jobs/${job._id}/description`)
+      .then(({ data }) => {
+        if (data.data?.description) updateJob({ description: data.data.description });
+      })
+      .catch(() => {})
+      .finally(() => setDescLoading(false));
+  };
 
   // Fetch fresh contacts on mount (Results and LinkedIn modes)
   useEffect(() => {
@@ -438,15 +449,24 @@ export default function JobDetailPanel({
         const { data } = await api.post(`/linkedin/jobs/${job._id}/find-hr`);
         const emails    = data.data.emails    || [];
         const employees = data.data.employees || [];
-        const patch = {};
+        const patch = {
+          ...(data.data.careerPageUrl  && { careerPageUrl:  data.data.careerPageUrl  }),
+          ...(data.data.linkedinUrl    && { linkedinUrl:    data.data.linkedinUrl    }),
+          ...(data.data.employeeSearch && { employeeSearch: data.data.employeeSearch }),
+        };
         if (emails.length > 0) {
           patch.recruiterEmail       = emails[0].email;
           patch.recruiterName        = emails[0].name;
           patch.allRecruiterContacts = emails;
         }
         if (employees.length > 0) patch.employees = employees;
-        if (Object.keys(patch).length) updateJob(patch);
-        toast.success(`Found ${emails.length} HR emails · ${employees.length} employees`);
+        updateJob(patch);
+        const msg = emails.length > 0
+          ? `Found ${emails.length} HR emails · ${employees.length} employees`
+          : data.data.careerPageUrl
+            ? 'No verified emails — career page & LinkedIn links added'
+            : 'No HR contacts found for this company';
+        toast.success(msg);
       } else {
         // Results or Geo — use universal recruiter lookup
         const { data }  = await api.post('/recruiters/lookup', { company: job.company, jobId: job._id });
@@ -732,23 +752,39 @@ export default function JobDetailPanel({
               </div>
             ) : mode === 'linkedin' ? (
               <div className="flex flex-col items-center gap-3 py-6 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center">
-                  <Linkedin className="w-5 h-5 text-blue-600" />
+                <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center">
+                  <Linkedin className="w-5 h-5 text-gray-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-700">Description not available</p>
-                  <p className="text-xs text-gray-400 mt-0.5">LinkedIn did not return a description for this job</p>
+                  <p className="text-sm font-semibold text-gray-700">No description available</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {job.url
+                      ? 'Could not scrape description from the job page'
+                      : 'No job URL found — description cannot be fetched'}
+                  </p>
                 </div>
-                {(job.url || job.applyUrl) && (
-                  <a
-                    href={job.url || job.applyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0077b5] text-white text-sm font-semibold rounded-xl hover:bg-[#005d91] transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> View on LinkedIn
-                  </a>
-                )}
+                <div className="flex gap-2 flex-wrap justify-center">
+                  {job.url && (
+                    <button
+                      onClick={retryFetchDescription}
+                      disabled={descLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                    >
+                      {descLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      Retry Fetch
+                    </button>
+                  )}
+                  {(job.url || job.applyUrl) && (
+                    <a
+                      href={job.url || job.applyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0077b5] text-white text-xs font-semibold rounded-lg hover:bg-[#005d91] transition-colors"
+                    >
+                      <ExternalLink className="w-3 h-3" /> View Job Page
+                    </a>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-gray-400 italic">No description available</p>
