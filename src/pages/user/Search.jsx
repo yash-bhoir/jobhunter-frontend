@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search as SearchIcon, MapPin, Briefcase, User,
   ChevronDown, ChevronUp, Loader2, Zap, Mail, CheckCircle,
   Clock, RefreshCw, Sparkles, History, ChevronRight,
-  Wand2, ArrowRight, X, Target, Navigation
+  Wand2, ArrowRight, X, Target, Navigation, Building,
+  Star, ExternalLink, Filter, Calendar, TrendingUp,
 } from 'lucide-react';
 import { useAuth }     from '@hooks/useAuth';
 import { useSocket }   from '@hooks/useSocket';
@@ -25,6 +26,26 @@ const WORK_TYPES = [
   { value: 'hybrid', label: 'Hybrid'  },
   { value: 'onsite', label: 'On-site' },
 ];
+
+const EXP_LEVELS = [
+  { value: 'any',       label: 'Any Level'  },
+  { value: 'entry',     label: 'Entry'      },
+  { value: 'mid',       label: 'Mid-Level'  },
+  { value: 'senior',    label: 'Senior'     },
+  { value: 'executive', label: 'Executive'  },
+];
+
+const DATE_POSTED = [
+  { value: 'any',   label: 'Any Time'   },
+  { value: '1',     label: 'Today'      },
+  { value: '7',     label: 'Past Week'  },
+  { value: '30',    label: 'Past Month' },
+];
+
+const SCORE_STYLE = (s) =>
+  s >= 75 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+  s >= 50 ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+            'bg-gray-100 text-gray-500';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
@@ -46,8 +67,11 @@ export default function Search() {
   const [role,           setRole]           = useState(user?.profile?.targetRole || '');
   const [location,       setLocation]       = useState(user?.profile?.preferredLocations?.[0] || 'India');
   const [workType,       setWorkType]       = useState(user?.profile?.workType || 'any');
+  const [expLevel,       setExpLevel]       = useState('any');
+  const [datePosted,     setDatePosted]     = useState('any');
   const [platforms,      setPlatforms]      = useState(userPlatforms.map(p => p.id));
   const [showPlatforms,  setShowPlatforms]  = useState(false);
+  const [showAdvanced,   setShowAdvanced]   = useState(false);
   const [loading,        setLoading]        = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [progress,       setProgress]       = useState({});
@@ -61,7 +85,7 @@ export default function Search() {
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [showSugg,       setShowSugg]       = useState(false);
 
-  const [radius,          setRadius]          = useState(0);           // 0 = Any
+  const [radius,          setRadius]          = useState(0);
   const [locSuggestions,  setLocSuggestions]  = useState([]);
   const [locLoading,      setLocLoading]      = useState(false);
   const [showLocDrop,     setShowLocDrop]     = useState(false);
@@ -79,7 +103,6 @@ export default function Search() {
     { label: '100 km', value: 100 },
   ];
 
-  // Close location dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
       if (locDropRef.current && !locDropRef.current.contains(e.target) &&
@@ -91,7 +114,6 @@ export default function Search() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Location autocomplete via OpenStreetMap Nominatim (free, no key needed)
   const fetchLocSuggestions = (query) => {
     clearTimeout(locDebounce.current);
     if (!query.trim() || query.length < 2) { setLocSuggestions([]); setShowLocDrop(false); return; }
@@ -110,7 +132,7 @@ export default function Search() {
           const country = a.country || '';
           const label   = [city, state, country].filter(Boolean).join(', ');
           return { label, city, lat: r.lat, lon: r.lon };
-        }).filter((v, i, arr) => arr.findIndex(x => x.label === v.label) === i); // dedupe
+        }).filter((v, i, arr) => arr.findIndex(x => x.label === v.label) === i);
         setLocSuggestions(formatted);
         setShowLocDrop(formatted.length > 0);
       } catch { setLocSuggestions([]); }
@@ -208,8 +230,17 @@ export default function Search() {
     dispatch(startSearch(null));
     try {
       const { data } = await api.post('/search/run',
-        { role: role.trim(), location: location.trim() || 'India', workType, platforms, force, ...(radius > 0 && { radius }) },
-        { timeout: 90000 }  // 90s — search can take up to 40-50s across all platforms
+        {
+          role: role.trim(),
+          location: location.trim() || 'India',
+          workType,
+          platforms,
+          force,
+          ...(radius > 0 && { radius }),
+          ...(expLevel !== 'any' && { expLevel }),
+          ...(datePosted !== 'any' && { datePosted }),
+        },
+        { timeout: 90000 }
       );
       setResults(data.data);
       dispatch(setJobs(data.data.jobs || []));
@@ -217,12 +248,11 @@ export default function Search() {
       if (data.data.fromCache) toast.success('Loaded from cache — saved 10 credits!');
       else toast.success(`Found ${data.data.totalFound} jobs!`);
       api.get('/search/history?limit=6').then(({ data: h }) => setHistory(h.data || [])).catch(() => {});
-      setTimeout(() => navigate(`/results${data.data.searchId ? `?searchId=${data.data.searchId}` : ''}`), 2000);
+      // No auto-navigate — results shown inline
     } catch (err) {
-      // Timeout means search is still running in background — redirect to results
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
         toast('Search is taking longer than usual — checking results…');
-        dispatch(completeSearch());
+        dispatch(completeSearch()); setDone(true);
         setTimeout(() => navigate('/results'), 3000);
       } else {
         dispatch(setSearchError(err.response?.data?.message || 'Search failed'));
@@ -231,12 +261,30 @@ export default function Search() {
     } finally { setLoading(false); }
   };
 
-  const isPro = user?.plan === 'pro' || user?.plan === 'team';
-  const doneJobs   = results?.jobs?.length || 0;
-  const doneEmails = results?.emailsFound  || 0;
+  const isPro     = user?.plan === 'pro' || user?.plan === 'team';
+  const doneJobs  = results?.jobs?.length || 0;
+  const doneEmails = results?.emailsFound || 0;
+
+  // Client-side filter for inline results
+  const filteredResults = (() => {
+    if (!results?.jobs) return [];
+    let jobs = [...results.jobs];
+    if (expLevel !== 'any') {
+      const kw = expLevel === 'entry' ? ['entry', 'junior', 'fresher', 'graduate', 'trainee', '0-2', '0-1'] :
+                 expLevel === 'mid'   ? ['mid', 'intermediate', '2-5', '3-5', '2-4'] :
+                 expLevel === 'senior' ? ['senior', 'lead', 'principal', 'staff', '5+', '6+', '7+'] :
+                                        ['executive', 'director', 'vp', 'head', 'chief', 'cto', 'ceo'];
+      jobs = jobs.filter(j => kw.some(k => (j.title || '').toLowerCase().includes(k) || (j.description || '').toLowerCase().includes(k)));
+    }
+    if (datePosted !== 'any') {
+      const cutoff = new Date(Date.now() - parseInt(datePosted) * 86400000);
+      jobs = jobs.filter(j => j.postedAt ? new Date(j.postedAt) >= cutoff : true);
+    }
+    return jobs;
+  })();
 
   return (
-    <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
+    <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
 
       {/* Header */}
       <motion.div variants={fadeUp}>
@@ -252,9 +300,9 @@ export default function Search() {
       </motion.div>
 
       {/* Two-column layout on desktop */}
-      <div className="lg:grid lg:grid-cols-[1fr_300px] lg:gap-5 space-y-4 lg:space-y-0">
+      <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-5 space-y-4 lg:space-y-0">
 
-        {/* ── LEFT: main search form ─────────────────────────── */}
+        {/* ── LEFT: main area ─────────────────────────────────────── */}
         <div className="space-y-4 min-w-0">
 
           {/* Search card */}
@@ -299,7 +347,6 @@ export default function Search() {
                     className="input pl-10 pr-10 py-3 rounded-xl text-sm w-full"
                     autoComplete="off"
                   />
-                  {/* GPS / spinner */}
                   <button
                     type="button"
                     onClick={useMyLocation}
@@ -314,8 +361,6 @@ export default function Search() {
                         : <Navigation className="w-4 h-4" />}
                   </button>
                 </div>
-
-                {/* Suggestions dropdown */}
                 <AnimatePresence>
                   {showLocDrop && locSuggestions.length > 0 && (
                     <motion.ul
@@ -342,7 +387,28 @@ export default function Search() {
                 </AnimatePresence>
               </div>
 
-              {/* Radius picker — shown for on-site or hybrid */}
+              {/* Work type pills */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Work Type</p>
+                <div className="flex gap-1.5 sm:gap-2">
+                  {WORK_TYPES.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={() => setWorkType(value)}
+                      className={cn(
+                        'flex-1 py-2 text-xs font-semibold rounded-lg border transition-all duration-150',
+                        workType === value
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Radius — for on-site / hybrid */}
               <AnimatePresence>
                 {(workType === 'onsite' || workType === 'hybrid') && (
                   <motion.div
@@ -375,23 +441,135 @@ export default function Search() {
                 )}
               </AnimatePresence>
 
-              {/* Work type pills */}
-              <div className="flex gap-1.5 sm:gap-2">
-                {WORK_TYPES.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    onClick={() => setWorkType(value)}
-                    className={cn(
-                      'flex-1 py-2.5 text-xs font-semibold rounded-lg border transition-all duration-150 min-h-[40px]',
-                      workType === value
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
-                    )}
+              {/* Advanced filters toggle */}
+              <button
+                onClick={() => setShowAdvanced(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                Advanced Filters
+                {showAdvanced ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {(expLevel !== 'any' || datePosted !== 'any') && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">
+                    {[expLevel !== 'any', datePosted !== 'any'].filter(Boolean).length}
+                  </span>
+                )}
+              </button>
+
+              {/* Advanced filters panel */}
+              <AnimatePresence>
+                {showAdvanced && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
                   >
-                    {label}
-                  </button>
-                ))}
-              </div>
+                    <div className="border border-gray-100 rounded-xl p-3 bg-gray-50/60 space-y-3">
+
+                      {/* Experience Level */}
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3" /> Experience Level
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {EXP_LEVELS.map(({ value, label }) => (
+                            <button
+                              key={value}
+                              onClick={() => setExpLevel(value)}
+                              className={cn(
+                                'px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-150',
+                                expLevel === value
+                                  ? 'bg-violet-600 text-white border-violet-600'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-violet-300 hover:text-violet-600'
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Date Posted */}
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" /> Date Posted
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {DATE_POSTED.map(({ value, label }) => (
+                            <button
+                              key={value}
+                              onClick={() => setDatePosted(value)}
+                              className={cn(
+                                'px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-150',
+                                datePosted === value
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600'
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Platforms */}
+                      <div>
+                        <button
+                          onClick={() => setShowPlatforms(v => !v)}
+                          className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
+                        >
+                          {showPlatforms ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          Platforms ({platforms.length}/{userPlatforms.length})
+                        </button>
+                        <AnimatePresence>
+                          {showPlatforms && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="overflow-hidden mt-2"
+                            >
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                {userPlatforms.map((platform) => {
+                                  const isSelected = platforms.includes(platform.id);
+                                  const locked     = platform.proOnly && !isPro;
+                                  return (
+                                    <button
+                                      key={platform.id}
+                                      onClick={() => !locked && togglePlatform(platform.id)}
+                                      disabled={locked}
+                                      className={cn(
+                                        'flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-all text-xs',
+                                        locked     ? 'opacity-40 cursor-not-allowed bg-gray-100 border-gray-200' :
+                                        isSelected ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' :
+                                                     'bg-white border-gray-200 text-gray-600 hover:border-blue-200'
+                                      )}
+                                    >
+                                      <div className={cn(
+                                        'w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0',
+                                        isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                                      )}>
+                                        {isSelected && (
+                                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <span className="truncate">{platform.name}</span>
+                                      {locked && <span className="ml-auto text-[9px] bg-amber-100 text-amber-600 font-semibold px-1 py-0.5 rounded">Pro</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Helper row */}
               <div className="flex items-center gap-2 flex-wrap">
@@ -410,13 +588,6 @@ export default function Search() {
                 >
                   {suggestLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
                   AI suggest
-                </button>
-                <button
-                  onClick={() => setShowPlatforms(v => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors ml-auto"
-                >
-                  {showPlatforms ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  Platforms ({platforms.length}/{userPlatforms.length})
                 </button>
               </div>
 
@@ -458,54 +629,6 @@ export default function Search() {
                             <ArrowRight className="w-3.5 h-3.5 text-indigo-300 group-hover:text-indigo-600 flex-shrink-0 transition-colors" />
                           </motion.button>
                         ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Platform picker */}
-              <AnimatePresence>
-                {showPlatforms && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="border border-gray-100 rounded-xl p-3 bg-gray-50/50">
-                      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Platforms</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                        {userPlatforms.map((platform) => {
-                          const isSelected = platforms.includes(platform.id);
-                          const locked     = platform.proOnly && !isPro;
-                          return (
-                            <button
-                              key={platform.id}
-                              onClick={() => !locked && togglePlatform(platform.id)}
-                              disabled={locked}
-                              className={cn(
-                                'flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-all text-sm',
-                                locked     ? 'opacity-40 cursor-not-allowed bg-gray-100 border-gray-200' :
-                                isSelected ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' :
-                                             'bg-white border-gray-200 text-gray-600 hover:border-blue-200'
-                              )}
-                            >
-                              <div className={cn(
-                                'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0',
-                                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
-                              )}>
-                                {isSelected && (
-                                  <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                  </svg>
-                                )}
-                              </div>
-                              <span className="truncate">{platform.name}</span>
-                              {locked && <span className="ml-auto text-[10px] bg-amber-100 text-amber-600 font-semibold px-1 py-0.5 rounded">Pro</span>}
-                            </button>
-                          );
-                        })}
                       </div>
                     </div>
                   </motion.div>
@@ -582,36 +705,21 @@ export default function Search() {
                     <p className="text-xs text-gray-400">Takes 15–30 seconds</p>
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   {userPlatforms.filter(p => platforms.includes(p.id)).map((platform, i) => {
                     const p = progress[platform.id];
                     const status = !p ? 'waiting' : p.status === 'done' ? 'done' : p.status === 'error' ? 'error' : 'running';
                     return (
-                      <motion.div
-                        key={platform.id}
-                        initial={{ opacity: 0, x: -8 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.04 }}
-                        className="flex items-center gap-3"
-                      >
-                        <span className={cn('w-2 h-2 rounded-full flex-shrink-0',
-                          status === 'done'    ? 'bg-emerald-500' :
-                          status === 'error'   ? 'bg-red-400' :
-                          status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-gray-200'
-                        )} />
+                      <motion.div key={platform.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3">
+                        <span className={cn('w-2 h-2 rounded-full flex-shrink-0', status === 'done' ? 'bg-emerald-500' : status === 'error' ? 'bg-red-400' : status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-gray-200')} />
                         <span className="text-sm text-gray-700 flex-1">{platform.name}</span>
-                        <span className={cn('text-xs font-medium',
-                          status === 'done'  ? 'text-emerald-600' :
-                          status === 'error' ? 'text-red-400' : 'text-gray-300'
-                        )}>
+                        <span className={cn('text-xs font-medium', status === 'done' ? 'text-emerald-600' : status === 'error' ? 'text-red-400' : 'text-gray-300')}>
                           {status === 'done' ? `✓ ${p.found} jobs` : status === 'error' ? '✗ Failed' : status === 'running' ? 'Searching…' : '—'}
                         </span>
                       </motion.div>
                     );
                   })}
                 </div>
-
                 <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
                   <p className="text-xs text-gray-400">
@@ -626,94 +734,155 @@ export default function Search() {
             )}
           </AnimatePresence>
 
-          {/* Done */}
+          {/* ── Inline Results ─────────────────────────────────────── */}
           <AnimatePresence>
             {done && results && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.97 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="rounded-2xl overflow-hidden"
-                style={{
-                  background: results.fromCache
-                    ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)'
-                    : 'linear-gradient(135deg, #dbeafe, #e0e7ff)',
-                  boxShadow: '0 4px 24px -4px rgba(0,0,0,0.1)',
-                }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="space-y-3"
               >
-                <div className="p-5">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', results.fromCache ? 'bg-emerald-500' : 'bg-blue-500')}>
-                      {results.fromCache ? <Sparkles className="w-5 h-5 text-white" /> : <CheckCircle className="w-5 h-5 text-white" />}
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900">{results.fromCache ? 'Loaded from cache!' : 'Search complete!'}</p>
-                      <p className="text-xs text-gray-500">{results.fromCache ? '10 credits saved 🎉' : `${Math.round((results.durationMs || 0) / 1000)}s total`}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 mb-3">
-                    {[
-                      { label: 'Jobs',      value: doneJobs },
-                      { label: 'HR Emails', value: doneEmails },
-                      { label: results.fromCache ? 'Credits' : 'Platforms', value: results.fromCache ? 'FREE' : results.platformResults?.length },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="bg-white/70 backdrop-blur-sm rounded-xl p-3 text-center">
-                        <p className="text-xl font-black text-gray-800">{value}</p>
-                        <p className="text-[11px] text-gray-500">{label}</p>
+                {/* Summary bar */}
+                <div
+                  className="rounded-2xl overflow-hidden"
+                  style={{
+                    background: results.fromCache
+                      ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)'
+                      : 'linear-gradient(135deg, #dbeafe, #e0e7ff)',
+                    boxShadow: '0 4px 24px -4px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center', results.fromCache ? 'bg-emerald-500' : 'bg-blue-500')}>
+                        {results.fromCache ? <Sparkles className="w-4 h-4 text-white" /> : <CheckCircle className="w-4 h-4 text-white" />}
                       </div>
-                    ))}
+                      <div className="flex-1">
+                        <p className="font-bold text-gray-900 text-sm">{results.fromCache ? 'Loaded from cache!' : 'Search complete!'}</p>
+                        <p className="text-xs text-gray-500">{results.fromCache ? '10 credits saved 🎉' : `${Math.round((results.durationMs || 0) / 1000)}s total`}</p>
+                      </div>
+                      <Link
+                        to={`/results${results.searchId ? `?searchId=${results.searchId}` : ''}`}
+                        className="flex items-center gap-1 text-xs font-bold text-blue-700 bg-white/80 hover:bg-white px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        View all <ChevronRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'Jobs Found', value: doneJobs },
+                        { label: 'HR Emails',  value: doneEmails },
+                        { label: results.fromCache ? 'Credits' : 'Platforms', value: results.fromCache ? 'FREE' : results.platformResults?.length },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="bg-white/70 backdrop-blur-sm rounded-xl p-2.5 text-center">
+                          <p className="text-lg font-black text-gray-800">{value}</p>
+                          <p className="text-[10px] text-gray-500">{label}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <motion.p
-                    animate={{ opacity: [0.4, 1, 0.4] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                    className="text-xs text-center text-gray-400"
-                  >
-                    Redirecting to results…
-                  </motion.p>
                 </div>
+
+                {/* Active filter badges */}
+                {(expLevel !== 'any' || datePosted !== 'any') && filteredResults.length !== results.jobs?.length && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-400">Filtered to {filteredResults.length} jobs</span>
+                    {expLevel !== 'any' && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-violet-100 text-violet-700 text-xs font-semibold rounded-full">
+                        {EXP_LEVELS.find(e => e.value === expLevel)?.label}
+                        <button onClick={() => setExpLevel('any')}><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {datePosted !== 'any' && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-full">
+                        {DATE_POSTED.find(d => d.value === datePosted)?.label}
+                        <button onClick={() => setDatePosted('any')}><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Job list */}
+                {filteredResults.length > 0 ? (
+                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden" style={{ boxShadow: '0 4px 24px -4px rgba(0,0,0,0.07)' }}>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                      <p className="font-semibold text-gray-800 text-sm">
+                        Results <span className="text-gray-400 font-normal">({filteredResults.length} jobs)</span>
+                      </p>
+                      <Link
+                        to={`/results${results.searchId ? `?searchId=${results.searchId}` : ''}`}
+                        className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-0.5"
+                      >
+                        Manage all <ChevronRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+                    <motion.div variants={stagger} initial="hidden" animate="show" className="divide-y divide-gray-50">
+                      {filteredResults.slice(0, 20).map((job, i) => (
+                        <motion.div
+                          key={job._id || i}
+                          variants={itemFade}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors group"
+                        >
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0"
+                            style={{ background: `hsl(${(job.company?.charCodeAt(0) || 65) * 5 % 360}, 65%, 55%)` }}
+                          >
+                            {job.company?.[0]?.toUpperCase() || '?'}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-gray-900 text-sm truncate">{job.title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
+                              <Building className="w-3 h-3" /> {job.company}
+                              {job.location && <><MapPin className="w-3 h-3 ml-1" /> {typeof job.location === 'string' ? job.location : job.location?.address}</>}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {job.matchScore > 0 && (
+                              <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', SCORE_STYLE(job.matchScore))}>
+                                {job.matchScore}%
+                              </span>
+                            )}
+                            {job.url && (
+                              <a
+                                href={job.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                className="p-1 text-gray-300 hover:text-blue-500 transition-colors"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                    {filteredResults.length > 20 && (
+                      <div className="px-4 py-3 border-t border-gray-100 text-center">
+                        <Link
+                          to={`/results${results.searchId ? `?searchId=${results.searchId}` : ''}`}
+                          className="text-xs text-blue-600 font-semibold hover:underline"
+                        >
+                          + {filteredResults.length - 20} more jobs in Results →
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
+                    <p className="text-sm text-gray-400">No jobs match the active filters.</p>
+                    <button onClick={() => { setExpLevel('any'); setDatePosted('any'); }} className="mt-2 text-xs text-blue-600 font-semibold hover:underline">
+                      Clear filters
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
 
-        {/* ── RIGHT: sidebar ───────────────────────────────────── */}
-        <div className="space-y-4">
-
-          {/* Feature tiles */}
-          <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-1 gap-2">
-            {[
-              { icon: SearchIcon, title: `${userPlatforms.length}+ Platforms`, desc: 'Searched at once',       color: 'blue'    },
-              { icon: Target,     title: 'AI Match Score',  desc: 'Ranked by fit',          color: 'violet'  },
-              { icon: Mail,       title: 'HR Emails',       desc: 'Auto-found contacts',    color: 'emerald' },
-              { icon: Zap,        title: 'Smart Cache',     desc: 'Free reuse for 30 days', color: 'amber'   },
-            ].map(({ icon: Icon, title, desc, color }) => (
-              <div key={title} className={cn(
-                'flex items-center gap-3 p-3 rounded-xl border',
-                color === 'blue'    ? 'bg-blue-50/60 border-blue-100' :
-                color === 'violet'  ? 'bg-violet-50/60 border-violet-100' :
-                color === 'emerald' ? 'bg-emerald-50/60 border-emerald-100' :
-                                      'bg-amber-50/60 border-amber-100'
-              )}>
-                <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-                  color === 'blue'    ? 'bg-blue-100' :
-                  color === 'violet'  ? 'bg-violet-100' :
-                  color === 'emerald' ? 'bg-emerald-100' : 'bg-amber-100'
-                )}>
-                  <Icon className={cn('w-4 h-4',
-                    color === 'blue'    ? 'text-blue-600' :
-                    color === 'violet'  ? 'text-violet-600' :
-                    color === 'emerald' ? 'text-emerald-600' : 'text-amber-600'
-                  )} />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">{title}</p>
-                  <p className="text-xs text-gray-400">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </motion.div>
-
-          {/* Recent searches */}
-          {!loading && !done && history.length > 0 && (
+          {/* ── Recent Searches (below form) ───────────────────────── */}
+          {!loading && history.length > 0 && (
             <motion.div
               variants={fadeUp}
               className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
@@ -722,13 +891,12 @@ export default function Search() {
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-2">
                   <History className="w-3.5 h-3.5 text-gray-400" />
-                  <p className="text-sm font-semibold text-gray-700">Recent</p>
+                  <p className="text-sm font-semibold text-gray-700">Recent Searches</p>
                 </div>
                 <button onClick={() => navigate('/results')} className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-0.5">
-                  All <ChevronRight className="w-3 h-3" />
+                  All results <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
-
               {historyLoading ? (
                 <div className="p-3 space-y-2">
                   {[...Array(3)].map((_, i) => <div key={i} className="skeleton h-8 rounded-lg" />)}
@@ -764,6 +932,52 @@ export default function Search() {
           )}
         </div>
 
+        {/* ── RIGHT: feature tiles only ────────────────────────────── */}
+        <div className="space-y-3">
+          <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-1 gap-2">
+            {[
+              { icon: SearchIcon, title: `${userPlatforms.length}+ Platforms`, desc: 'Searched at once',       color: 'blue'    },
+              { icon: Target,     title: 'AI Match Score',  desc: 'Ranked by fit',          color: 'violet'  },
+              { icon: Mail,       title: 'HR Emails',       desc: 'Auto-found contacts',    color: 'emerald' },
+              { icon: Zap,        title: 'Smart Cache',     desc: 'Free reuse for 30 days', color: 'amber'   },
+            ].map(({ icon: Icon, title, desc, color }) => (
+              <div key={title} className={cn(
+                'flex items-center gap-3 p-3 rounded-xl border',
+                color === 'blue'    ? 'bg-blue-50/60 border-blue-100' :
+                color === 'violet'  ? 'bg-violet-50/60 border-violet-100' :
+                color === 'emerald' ? 'bg-emerald-50/60 border-emerald-100' :
+                                      'bg-amber-50/60 border-amber-100'
+              )}>
+                <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+                  color === 'blue'    ? 'bg-blue-100' :
+                  color === 'violet'  ? 'bg-violet-100' :
+                  color === 'emerald' ? 'bg-emerald-100' : 'bg-amber-100'
+                )}>
+                  <Icon className={cn('w-4 h-4',
+                    color === 'blue'    ? 'text-blue-600' :
+                    color === 'violet'  ? 'text-violet-600' :
+                    color === 'emerald' ? 'text-emerald-600' : 'text-amber-600'
+                  )} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">{title}</p>
+                  <p className="text-xs text-gray-400">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+
+          {/* Quick tip */}
+          <motion.div variants={fadeUp} className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Sparkles className="w-4 h-4 text-violet-500" />
+              <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">Pro Tip</p>
+            </div>
+            <p className="text-xs text-violet-800 leading-relaxed">
+              After searching, use the Outreach tab to send personalised AI-written emails to the HR contacts found automatically.
+            </p>
+          </motion.div>
+        </div>
       </div>
     </motion.div>
   );

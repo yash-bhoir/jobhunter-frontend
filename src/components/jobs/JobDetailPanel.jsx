@@ -621,6 +621,8 @@ export default function JobDetailPanel({
       jobTitle: job.title    || '',
       ...(allEmails.length ? { to: allEmails.join(',') } : {}),
       ...(job.searchId ? { searchId: job.searchId } : {}),
+      // Pass source-specific job ID so backend can update the correct model's status
+      ...(mode === 'linkedin' && job._id ? { linkedinJobId: job._id } : {}),
     });
     window.location.href = `/outreach-manager?${params}`;
   };

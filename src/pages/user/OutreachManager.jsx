@@ -4,7 +4,7 @@ import {
   Mail, Send, Loader2, Sparkles, CheckCircle,
   ExternalLink, Linkedin, Copy, Check, Users,
   ChevronDown, ChevronUp, RefreshCw, Lock, Settings,
-  Paperclip, FileText, Wand2, Info, Download
+  Paperclip, FileText, Wand2, Info, Download, PenLine
 } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useAuth }  from '@hooks/useAuth';
@@ -19,9 +19,11 @@ export default function OutreachManager() {
   const searchId       = searchParams.get('searchId');
   // When navigating from a single job's "Send Outreach Email" button,
   // these params narrow the view to just that one company
-  const singleCompany  = searchParams.get('company')  || null;
-  const singleTo       = searchParams.get('to')       || null;
-  const singleTitle    = searchParams.get('jobTitle')  || null;
+  const singleCompany    = searchParams.get('company')      || null;
+  const singleTo         = searchParams.get('to')           || null;
+  const singleTitle      = searchParams.get('jobTitle')     || null;
+  // Source-specific job IDs for updating applied status in the right model
+  const linkedinJobId    = searchParams.get('linkedinJobId') || null;
 
   const [data,          setData]          = useState(null);
   const [loading,       setLoading]       = useState(true);
@@ -45,6 +47,8 @@ export default function OutreachManager() {
   const [showPasteBox,    setShowPasteBox]    = useState({}); // company -> bool
   const [jdPasteText,     setJdPasteText]     = useState({}); // company -> full JD pasted by user
   const [showJdPaste,     setShowJdPaste]     = useState({}); // company -> bool
+  const [enhancing,       setEnhancing]       = useState({}); // company -> bool
+  const [composeMode,     setComposeMode]     = useState({}); // company -> 'generated' | 'manual'
 
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
 
@@ -182,14 +186,20 @@ export default function OutreachManager() {
     const job = companyData.jobs[0];
     setGenerating(p => ({ ...p, [company]: true }));
 
+    // Use pasted JD if available, otherwise fall back to stored job description
+    const jd = jdPasteText[company]?.trim() || job.description || '';
+
     try {
       const { data: res } = await api.post('/outreach/generate', {
         company,
-        jobTitle:      job.title,
-        recruiterName: companyData.recruiterName,
-        jobUrl:        job.url,
+        jobTitle:        job.title,
+        recruiterName:   companyData.recruiterName,
+        jobUrl:          job.url,
+        jobDescription:  jd,
+        jobId:           job._id || undefined,
       });
       setPreviews(p => ({ ...p, [company]: { subject: res.data.subject, body: res.data.body, emailId: res.data.emailId } }));
+      setComposeMode(p => ({ ...p, [company]: 'generated' }));
       setExpandedPrev(p => ({ ...p, [company]: true }));
     } catch (err) {
       toast.error(err.response?.data?.message || 'Generation failed');
@@ -202,6 +212,48 @@ export default function OutreachManager() {
     const companies = data.companies.filter(c => c.recruiterEmail && selected.includes(c.company));
     for (const c of companies) {
       if (!previews[c.company]) await generateEmail(c.company);
+    }
+  };
+
+  // ── Start manual compose (blank email) ───────────────────────────
+  const startManualWrite = (company) => {
+    const companyData = data.companies.find(c => c.company === company);
+    const job = companyData?.jobs[0];
+    setPreviews(p => ({
+      ...p,
+      [company]: { subject: job?.title ? `${job.title} — Application` : '', body: '' },
+    }));
+    setComposeMode(p => ({ ...p, [company]: 'manual' }));
+    setExpandedPrev(p => ({ ...p, [company]: true }));
+  };
+
+  // ── Enhance existing email with AI ────────────────────────────────
+  const enhanceEmail = async (company) => {
+    const companyData = data.companies.find(c => c.company === company);
+    const preview = previews[company];
+    if (!preview) return;
+    const job = companyData?.jobs[0];
+    const jd = jdPasteText[company]?.trim() || job?.description || '';
+
+    setEnhancing(p => ({ ...p, [company]: true }));
+    try {
+      const { data: res } = await api.post('/outreach/enhance', {
+        subject:        preview.subject,
+        body:           preview.body,
+        company,
+        jobTitle:       job?.title,
+        jobDescription: jd,
+      });
+      setPreviews(p => ({
+        ...p,
+        [company]: { ...p[company], subject: res.data.subject, body: res.data.body },
+      }));
+      setComposeMode(p => ({ ...p, [company]: 'generated' }));
+      toast.success('Email enhanced!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Enhancement failed');
+    } finally {
+      setEnhancing(p => ({ ...p, [company]: false }));
     }
   };
 
@@ -240,7 +292,8 @@ export default function OutreachManager() {
     const companyData = data.companies.find(c => c.company === company);
     const preview     = previews[company];
 
-    if (!preview) { toast.error('Generate email first'); return; }
+    if (!preview) { toast.error('Compose or generate an email first'); return; }
+    if (!preview.subject && !preview.body) { toast.error('Add a subject and body before sending'); return; }
 
     // Use only selected emails for this company
     const allContacts = companyData.allRecruiterContacts?.length > 0
@@ -271,11 +324,14 @@ export default function OutreachManager() {
         }
       }
 
+      // Use the first valid job _id as jobId (from search results or linkedinJobId from URL)
+      const resolvedJobId = companyData.jobs[0]?._id || linkedinJobId || undefined;
+
       const basePayload = {
         subject:        preview.subject,
         body:           preview.body,
         company,
-        jobId:          companyData.jobs[0]?._id,
+        jobId:          resolvedJobId,
         attachResume:   attachResume && !resumeBuffer,  // backend fallback only if PDF fetch failed
         resumeBuffer,
         resumeFilename,
@@ -749,17 +805,26 @@ export default function OutreachManager() {
                   {/* Actions */}
                   <div className="flex flex-col gap-2 flex-shrink-0">
                     {!previews[company.company] ? (
-                      <button
-                        onClick={() => generateEmail(company.company)}
-                        disabled={generating[company.company]}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        {generating[company.company]
-                          ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <Sparkles className="w-4 h-4" />
-                        }
-                        Generate
-                      </button>
+                      <>
+                        <button
+                          onClick={() => generateEmail(company.company)}
+                          disabled={generating[company.company]}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          {generating[company.company]
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <Sparkles className="w-4 h-4" />
+                          }
+                          Generate
+                        </button>
+                        <button
+                          onClick={() => startManualWrite(company.company)}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          <PenLine className="w-4 h-4" />
+                          Write
+                        </button>
+                      </>
                     ) : (
                       <>
                         {(() => {
@@ -797,21 +862,54 @@ export default function OutreachManager() {
                 {/* Email preview */}
                 {previews[company.company] && expandedPrev[company.company] && (
                   <div className="mt-3 ml-8 border border-gray-200 rounded-xl overflow-hidden">
-                    <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-gray-600">Email Preview</span>
-                        <span className="badge badge-green text-xs">AI Generated</span>
-                        {(attachResume || optimizedResumes[company.company]) && (
-                          <span className="badge badge-blue text-xs flex items-center gap-1">
-                            <Paperclip className="w-2.5 h-2.5" />
-                            {optimizedResumes[company.company] ? 'Resume + ATS Analysis' : 'Resume'}
+                    <div className="bg-gray-50 border-b border-gray-200">
+                      {/* Row 1: mode label + Enhance / Re-generate */}
+                      <div className="px-3 py-2 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-600">
+                            {composeMode[company.company] === 'manual' ? 'Compose Email' : 'Email Preview'}
                           </span>
-                        )}
+                          {composeMode[company.company] === 'manual'
+                            ? <span className="badge badge-gray text-xs flex items-center gap-1"><PenLine className="w-2.5 h-2.5" /> Manual</span>
+                            : <span className="badge badge-green text-xs flex items-center gap-1"><Sparkles className="w-2.5 h-2.5" /> AI Generated</span>
+                          }
+                          {(attachResume || optimizedResumes[company.company]) && (
+                            <span className="badge badge-blue text-xs flex items-center gap-1">
+                              <Paperclip className="w-2.5 h-2.5" />
+                              {optimizedResumes[company.company] ? 'Resume + ATS Analysis' : 'Resume'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => enhanceEmail(company.company)}
+                            disabled={enhancing[company.company] || !previews[company.company]?.body}
+                            className="btn btn-sm bg-violet-100 text-violet-700 hover:bg-violet-200 border-violet-200 flex items-center gap-1"
+                            title="Use AI to enhance and improve this email"
+                          >
+                            {enhancing[company.company]
+                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enhancing...</>
+                              : <><Wand2 className="w-3.5 h-3.5" /> Enhance <span className="text-violet-500 text-xs">5 cr</span></>
+                            }
+                          </button>
+                          <button
+                            onClick={() => generateEmail(company.company)}
+                            disabled={generating[company.company]}
+                            className="btn btn-sm btn-secondary flex items-center gap-1"
+                            title="Regenerate with AI"
+                          >
+                            {generating[company.company]
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Sparkles className="w-3.5 h-3.5" />
+                            }
+                            {generating[company.company] ? 'Generating...' : 'Re-generate'}
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Pro: Optimize Keywords button */}
-                      {isPro && hasResume && !optimizedResumes[company.company] && (
-                        <div className="flex items-center gap-1.5">
+                      {/* Row 2 (conditional): Pro resume optimise / ATS status */}
+                      {(isPro && hasResume && !optimizedResumes[company.company]) && (
+                        <div className="px-3 py-1.5 border-t border-gray-200 flex items-center gap-1.5 flex-wrap">
                           <button
                             onClick={() => optimizeResume(company.company)}
                             disabled={optimizing[company.company]}
@@ -832,7 +930,7 @@ export default function OutreachManager() {
                         </div>
                       )}
                       {optimizedResumes[company.company] && (
-                        <div className="flex items-center gap-2">
+                        <div className="px-3 py-1.5 border-t border-gray-200 flex items-center gap-2">
                           <span className="badge bg-purple-100 text-purple-700 text-xs flex items-center gap-1">
                             <Wand2 className="w-3 h-3" /> ATS Optimized
                           </span>

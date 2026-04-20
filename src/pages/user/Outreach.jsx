@@ -47,7 +47,7 @@ export default function Outreach() {
   const [toInput,      setToInput]      = useState('');
 
   const [form, setForm] = useState({
-    company: '', jobTitle: '', recruiterName: '', subject: '', body: '',
+    company: '', jobTitle: '', recruiterName: '', jobDescription: '', subject: '', body: '',
   });
   const [generated,    setGenerated]    = useState(false);
   const [emailId,      setEmailId]      = useState(null);
@@ -133,6 +133,7 @@ export default function Outreach() {
     try {
       const { data } = await api.post('/outreach/generate', {
         company: form.company, jobTitle: form.jobTitle, recruiterName: form.recruiterName,
+        jobDescription: form.jobDescription || undefined,
       });
       setForm(prev => ({ ...prev, subject: data.data.subject, body: data.data.body }));
       setEmailId(data.data.emailId);
@@ -202,7 +203,7 @@ export default function Outreach() {
 
     if (successCount > 0) {
       toast.success(`Sent to ${successCount} recipient${successCount > 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}!`);
-      setForm({ company: '', jobTitle: '', recruiterName: '', subject: '', body: '' });
+      setForm({ company: '', jobTitle: '', recruiterName: '', jobDescription: '', subject: '', body: '' });
       setRecipients([]); setSelectedIds(new Set()); setToInput('');
       setGenerated(false); setEmailId(null);
       fetchEmails();
@@ -325,6 +326,15 @@ export default function Outreach() {
                 <input value={form.recruiterName}
                   onChange={e => setForm(p => ({ ...p, recruiterName: e.target.value }))}
                   placeholder="e.g. Priya Sharma (optional)" className="input" />
+              </Field>
+              <Field icon={FileText} label="Job Description (optional — improves AI email quality)">
+                <textarea
+                  value={form.jobDescription}
+                  onChange={e => setForm(p => ({ ...p, jobDescription: e.target.value }))}
+                  placeholder="Paste the job description here for a more tailored email…"
+                  rows={4}
+                  className="input text-sm resize-y"
+                />
               </Field>
 
               {/* Multi-recipient with selection */}

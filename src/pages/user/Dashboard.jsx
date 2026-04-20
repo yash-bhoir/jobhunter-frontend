@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   Search, Briefcase, Mail, Users, TrendingUp,
   ArrowRight, Star, Target, Plus, ChevronRight, Sparkles,
-  Zap, MapPin, Building, Bell, Check, Clock,
+  Zap, MapPin, Building, Bell, Check, Clock, Send,
 } from 'lucide-react';
 import { useAuth }    from '@hooks/useAuth';
 import { useCredits } from '@hooks/useCredits';
@@ -18,10 +18,12 @@ function getTimeOfDay() {
 }
 
 const STAT_CONFIG = [
-  { key: 'totalSearches', label: 'Searches',    icon: Search,    from: '#3b82f6', to: '#2563eb', glow: 'rgba(59,130,246,0.3)'  },
-  { key: 'totalJobs',     label: 'Jobs Found',  icon: Briefcase, from: '#8b5cf6', to: '#7c3aed', glow: 'rgba(139,92,246,0.3)'  },
-  { key: 'appliedJobs',   label: 'Applied',     icon: Target,    from: '#10b981', to: '#059669', glow: 'rgba(16,185,129,0.3)'  },
-  { key: 'interviewJobs', label: 'Interviews',  icon: Star,      from: '#f59e0b', to: '#d97706', glow: 'rgba(245,158,11,0.3)'  },
+  { key: 'totalJobs',       label: 'All Jobs',      icon: Briefcase, from: '#8b5cf6', to: '#7c3aed', glow: 'rgba(139,92,246,0.3)', sub: (s) => s ? `${s.jobSearchCount||0} search · ${s.linkedinJobCount||0} email/LI` : null },
+  { key: 'appliedJobs',     label: 'Applied',       icon: Target,    from: '#10b981', to: '#059669', glow: 'rgba(16,185,129,0.3)', sub: null },
+  { key: 'totalRecruiters', label: 'Recruiters',    icon: Users,     from: '#06b6d4', to: '#0891b2', glow: 'rgba(6,182,212,0.3)',  sub: null },
+  { key: 'emailsSent',      label: 'Emails Sent',   icon: Send,      from: '#3b82f6', to: '#2563eb', glow: 'rgba(59,130,246,0.3)', sub: null },
+  { key: 'interviewJobs',   label: 'Interviews',    icon: Star,      from: '#f59e0b', to: '#d97706', glow: 'rgba(245,158,11,0.3)', sub: null },
+  { key: 'totalSearches',   label: 'Searches',      icon: Search,    from: '#6366f1', to: '#4f46e5', glow: 'rgba(99,102,241,0.3)', sub: null },
 ];
 
 const QUICK_ACTIONS = [
@@ -129,32 +131,35 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Stats grid ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {STAT_CONFIG.map(({ key, label, icon: Icon, from, to, glow }, i) => {
-          const value = stats?.[key] ?? 0;
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {STAT_CONFIG.map(({ key, label, icon: Icon, from, to, glow, sub }, i) => {
+          const value   = stats?.[key] ?? 0;
+          const subText = sub ? sub(stats) : null;
           return (
             <motion.div
               key={key}
               variants={item}
-              className="group relative bg-white rounded-2xl border border-gray-100 p-5 overflow-hidden cursor-default"
+              className="group relative bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden cursor-default"
               style={{ boxShadow: '0 2px 8px -2px rgba(0,0,0,0.06)' }}
               whileHover={{ y: -3, boxShadow: `0 12px 24px -6px ${glow}` }}
               transition={{ duration: 0.2 }}
             >
-              {/* Gradient bg circle */}
-              <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full opacity-10 transition-opacity group-hover:opacity-20"
+              <div className="absolute -right-4 -top-4 w-16 h-16 rounded-full opacity-10 transition-opacity group-hover:opacity-20"
                 style={{ background: `radial-gradient(circle, ${from}, ${to})` }}
               />
               <div className="relative">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-2.5"
                   style={{ background: `linear-gradient(135deg, ${from}, ${to})`, boxShadow: `0 4px 12px ${glow}` }}
                 >
-                  <Icon className="w-5 h-5 text-white" />
+                  <Icon className="w-4 h-4 text-white" />
                 </div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
-                <p className="text-3xl font-black text-gray-900 mt-1 tabular-nums">
-                  {loading ? <span className="skeleton inline-block w-10 h-8 rounded-lg align-middle" /> : value}
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-tight">{label}</p>
+                <p className="text-2xl font-black text-gray-900 mt-0.5 tabular-nums">
+                  {loading ? <span className="skeleton inline-block w-8 h-7 rounded-lg align-middle" /> : value}
                 </p>
+                {subText && !loading && (
+                  <p className="text-[10px] text-gray-400 mt-0.5 leading-tight truncate">{subText}</p>
+                )}
               </div>
             </motion.div>
           );

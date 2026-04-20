@@ -6,7 +6,7 @@ import {
   Search, Download, Building, Wifi, Star, Mail, Send,
   Loader2, ChevronLeft, ChevronRight, Clock,
   RefreshCw, X, SlidersHorizontal,
-  Sparkles, Lock, Zap, Linkedin
+  Sparkles, Lock, Zap, Linkedin, Inbox
 } from 'lucide-react';
 import { api }  from '@utils/axios';
 import { cn }   from '@utils/helpers';
@@ -73,8 +73,8 @@ export default function Results() {
   const [searchMeta,    setSearchMeta]    = useState(null);
   const [outreachLoading, setOutreachLoading] = useState(false);
   const [showFilters,   setShowFilters]   = useState(false);
-  const [sourceTab,     setSourceTab]     = useState('search'); // 'search' | 'linkedin' | 'map'
-  const [tabCounts,     setTabCounts]     = useState({ search: 0, linkedin: 0, map: 0 });
+  const [sourceTab,     setSourceTab]     = useState('search'); // 'search' | 'linkedin' | 'email' | 'map'
+  const [tabCounts,     setTabCounts]     = useState({ search: 0, linkedin: 0, email: 0, map: 0 });
 
   useEffect(() => {
     if (!searchId) return;
@@ -85,18 +85,25 @@ export default function Results() {
   useEffect(() => {
     Promise.all([
       api.get('/jobs?limit=1&excludeSource=map-search').then(r => r.data.pagination?.total || 0).catch(() => 0),
-      api.get('/linkedin/jobs?limit=1').then(r => r.data.pagination?.total || 0).catch(() => 0),
+      api.get('/linkedin/jobs?limit=1&sourceType=linkedin').then(r => r.data.pagination?.total || 0).catch(() => 0),
+      api.get('/linkedin/gmail/jobs?limit=1').then(r => r.data.pagination?.total || 0).catch(() => 0),
       api.get('/jobs?limit=1&source=map-search').then(r => r.data.pagination?.total || 0).catch(() => 0),
-    ]).then(([search, linkedin, map]) => setTabCounts({ search, linkedin, map }));
+    ]).then(([search, linkedin, email, map]) => setTabCounts({ search, linkedin, email, map }));
   }, []);
 
   const fetchJobs = async () => {
     setLoading(true);
     try {
       if (sourceTab === 'linkedin') {
-        const params = new URLSearchParams({ page, limit: 20 });
+        const params = new URLSearchParams({ page, limit: 20, sourceType: 'linkedin' });
         if (filter.status) params.set('status', filter.status);
         const { data } = await api.get(`/linkedin/jobs?${params}`);
+        setJobs(data.data || []);
+        setTotal(data.pagination?.total || 0);
+      } else if (sourceTab === 'email') {
+        const params = new URLSearchParams({ page, limit: 20 });
+        if (filter.status) params.set('status', filter.status);
+        const { data } = await api.get(`/linkedin/gmail/jobs?${params}`);
         setJobs(data.data || []);
         setTotal(data.pagination?.total || 0);
       } else {
@@ -200,7 +207,7 @@ export default function Results() {
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Filters</span>
             </button>
-            {sourceTab === 'search' && (
+            {(sourceTab === 'search') && (
               <button onClick={exportExcel} className="btn btn-secondary btn-sm">
                 <Download className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Export</span>
@@ -210,24 +217,26 @@ export default function Results() {
         </div>
 
         {/* ── Source tabs ──────────────────────────────────────────── */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
           {[
-            { id: 'search',   label: 'Job Search', icon: Search,   count: tabCounts.search   },
-            { id: 'linkedin', label: 'LinkedIn',   icon: Linkedin, count: tabCounts.linkedin  },
-            { id: 'map',      label: 'Map Saves',  icon: MapPin,   count: tabCounts.map       },
+            { id: 'search',   label: 'Job Search',  icon: Search,   count: tabCounts.search   },
+            { id: 'linkedin', label: 'LinkedIn',    icon: Linkedin, count: tabCounts.linkedin  },
+            { id: 'email',    label: 'Email Jobs',  icon: Inbox,    count: tabCounts.email     },
+            { id: 'map',      label: 'Map Saves',   icon: MapPin,   count: tabCounts.map       },
           ].map(({ id, label, icon: Icon, count }) => (
             <button
               key={id}
               onClick={() => switchTab(id)}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all',
+                'flex-1 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold transition-all whitespace-nowrap',
                 sourceTab === id
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               )}
             >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
+              <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden">{id === 'search' ? 'Search' : id === 'linkedin' ? 'LI' : id === 'email' ? 'Email' : 'Map'}</span>
               {count > 0 && (
                 <span className={cn(
                   'px-1.5 py-0.5 rounded-full text-[10px] font-bold',
@@ -539,10 +548,10 @@ export default function Results() {
             >
               <JobDetailPanel
                 job={selected}
-                mode={sourceTab === 'linkedin' ? 'linkedin' : 'results'}
+                mode={sourceTab === 'linkedin' || sourceTab === 'email' ? 'linkedin' : 'results'}
                 onClose={() => setSelected(null)}
                 onJobUpdate={(patch) => {
-                  if (patch._deleted) { setSelected(null); if (sourceTab === 'linkedin') fetchJobs(); return; }
+                  if (patch._deleted) { setSelected(null); if (sourceTab === 'linkedin' || sourceTab === 'email') fetchJobs(); return; }
                   setJobs(prev => prev.map(j => j._id === selected._id ? { ...j, ...patch } : j));
                   setSelected(prev => prev ? { ...prev, ...patch } : prev);
                 }}

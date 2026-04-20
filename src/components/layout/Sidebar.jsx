@@ -12,13 +12,13 @@ import { api }      from '@utils/axios';
 
 const NAV_ITEMS = [
   { to: '/dashboard',  label: 'Dashboard',    icon: LayoutDashboard, color: 'blue'   },
-  { to: '/search',     label: 'Job Search',   icon: Search,          color: 'violet' },
-  { to: '/map-search', label: 'Map Search',   icon: Map,             color: 'cyan'   },
   { to: '/results',    label: 'Results',      icon: Briefcase,       color: 'indigo' },
+  { to: '/search',     label: 'Job Search',   icon: Search,          color: 'violet' },
   { to: '/recruiters', label: 'Recruiters',   icon: Users,           color: 'cyan'   },
-  { to: '/outreach',   label: 'Outreach',     icon: Mail,            color: 'emerald'},
-  { to: '/linkedin',   label: 'LinkedIn',     icon: Linkedin,        color: 'blue'   },
+  { to: '/map-search', label: 'Map Search',   icon: Map,             color: 'cyan'   },
   { to: '/email-jobs', label: 'Email Jobs',   icon: Inbox,           color: 'emerald'},
+  { to: '/linkedin',   label: 'LinkedIn Jobs',icon: Linkedin,        color: 'blue'   },
+  { to: '/outreach',   label: 'Outreach',     icon: Mail,            color: 'emerald'},
   { to: '/insights',   label: 'Insights',     icon: BarChart2,       color: 'violet' },
 ];
 
