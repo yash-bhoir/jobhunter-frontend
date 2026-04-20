@@ -158,9 +158,15 @@ export default function EmailJobs() {
         toast.info(`Found ${data.data?.fetched} jobs in emails, all already saved`);
       }
     } catch (err) {
-      const msg = err.response?.data?.message || 'Fetch failed';
-      toast.error(msg);
-      addDebugLog('error', 'Fetch failed', err.response?.data || err.message);
+      const code = err.response?.data?.code;
+      const msg  = err.response?.data?.message || 'Fetch failed';
+      if (code === 'GMAIL_TOKEN_EXPIRED') {
+        setGmailConnected(false);
+        toast.error('Gmail session expired — please reconnect your Gmail.');
+      } else {
+        toast.error(msg);
+      }
+      addDebugLog('error', msg, err.response?.data || err.message);
     } finally { setFetchLoading(false); }
   };
 
