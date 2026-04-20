@@ -107,9 +107,10 @@ export default function EmailJobs() {
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page, limit: LIMIT, source: sourceFilter || 'email' });
-      if (statusFilter) params.set('status', statusFilter);
-      const { data } = await api.get(`/linkedin/jobs?${params}`);
+      const params = new URLSearchParams({ page, limit: LIMIT });
+      if (sourceFilter)  params.set('source', sourceFilter);
+      if (statusFilter)  params.set('status', statusFilter);
+      const { data } = await api.get(`/linkedin/gmail/jobs?${params}`);
       setJobs(data.data || []);
       setTotal(data.pagination?.total || 0);
     } catch { toast.error('Failed to load jobs'); }
