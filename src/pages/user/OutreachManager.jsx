@@ -257,17 +257,11 @@ export default function OutreachManager() {
 
     setSending(p => ({ ...p, [company]: true }));
     try {
-      // Use template resume PDF (clean pdfkit version) if attachResume is on
+      // Always fetch the clean pdfkit template resume when attaching
       let resumeBuffer   = undefined;
       let resumeFilename = undefined;
 
-      const optimized = optimizedResumes[company];
-      if (optimized?.resumeBuffer) {
-        // User explicitly ran ATS optimization — use that
-        resumeBuffer   = optimized.resumeBuffer;
-        resumeFilename = optimized.filename || 'resume-optimized.pdf';
-      } else if (attachResume) {
-        // Fetch the clean template resume PDF
+      if (attachResume) {
         try {
           const { data: pdfRes } = await api.get('/outreach/generate-resume-pdf');
           resumeBuffer   = pdfRes.data.resumeBuffer;
