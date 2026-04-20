@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail, Loader2, RefreshCw, MapPin, Building, Star,
@@ -92,6 +93,7 @@ const LIMIT = 20;
 
 export default function EmailJobs() {
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [jobs,           setJobs]           = useState([]);
   const [loading,        setLoading]        = useState(true);
@@ -109,8 +111,9 @@ export default function EmailJobs() {
   const [daysBack,       setDaysBack]       = useState(30);
   const [showDebug,      setShowDebug]      = useState(false);
   const [debugLog,       setDebugLog]       = useState([]);
+  const [connectLoading, setConnectLoading] = useState(false);
 
-  useEffect(() => {
+  const checkGmailStatus = useCallback(() => {
     api.get('/linkedin/gmail/status')
       .then(r => {
         const d = r.data.data;
@@ -120,6 +123,40 @@ export default function EmailJobs() {
       })
       .catch(() => setGmailConnected(false));
   }, []);
+
+  useEffect(() => {
+    checkGmailStatus();
+    // Handle OAuth redirect back to this page
+    const gmailParam = searchParams.get('gmail');
+    if (gmailParam === 'connected') {
+      toast.success('Gmail connected successfully!');
+      setSearchParams({}, { replace: true });
+      checkGmailStatus();
+    } else if (gmailParam === 'error') {
+      toast.error('Gmail connection failed. Please try again.');
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const connectGmail = async () => {
+    setConnectLoading(true);
+    try {
+      const { data } = await api.get('/linkedin/gmail/connect');
+      window.location.href = data.data.url;
+    } catch {
+      toast.error('Failed to start Gmail connection');
+      setConnectLoading(false);
+    }
+  };
+
+  const disconnectGmail = async () => {
+    try {
+      await api.delete('/linkedin/gmail/disconnect');
+      setGmailConnected(false);
+      setGmailEmail('');
+      toast.success('Gmail disconnected');
+    } catch { toast.error('Failed to disconnect'); }
+  };
 
   useEffect(() => { loadJobs(); }, [sourceFilter, statusFilter, page]);
 
@@ -215,7 +252,7 @@ export default function EmailJobs() {
           <button
             onClick={fetchFromGmail}
             disabled={fetchLoading || gmailConnected === false}
-            title={gmailConnected === false ? 'Connect Gmail first in LinkedIn page' : ''}
+            title={gmailConnected === false ? 'Connect Gmail first using the button below' : ''}
             className="btn btn-primary btn-sm"
           >
             {fetchLoading
@@ -227,14 +264,17 @@ export default function EmailJobs() {
 
       {/* Gmail not connected (false = confirmed disconnected, null = still loading) */}
       {gmailConnected === false && (
-        <motion.div variants={fadeUp} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Gmail not connected</p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Go to <strong>LinkedIn</strong> page → Gmail Alerts section → Connect Gmail.
-            </p>
+        <motion.div variants={fadeUp} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Gmail not connected</p>
+              <p className="text-xs text-amber-600 mt-0.5">Connect your Gmail to auto-import jobs from LinkedIn, Naukri, Indeed and other job alert emails.</p>
+            </div>
           </div>
+          <button onClick={connectGmail} disabled={connectLoading} className="btn btn-primary btn-sm flex-shrink-0">
+            {connectLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Connecting…</> : <><Mail className="w-4 h-4" /> Connect Gmail</>}
+          </button>
         </motion.div>
       )}
 
