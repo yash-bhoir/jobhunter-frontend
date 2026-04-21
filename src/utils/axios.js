@@ -28,7 +28,12 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
 
-    if (error.response?.status === 401 && !original._retry && !original.url?.includes('/auth/')) {
+    // Skip JWT refresh for Gmail-specific auth errors — those use 400 now but guard
+    // against any future status changes by also checking the error code.
+    const isGmailAuthError = error.response?.data?.code === 'GMAIL_TOKEN_EXPIRED' ||
+                             error.response?.data?.code === 'GMAIL_NOT_CONNECTED';
+
+    if (error.response?.status === 401 && !original._retry && !original.url?.includes('/auth/') && !isGmailAuthError) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
