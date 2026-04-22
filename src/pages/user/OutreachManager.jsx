@@ -10,6 +10,7 @@ import { api }      from '@utils/axios';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { cn }       from '@utils/helpers';
+import { Badge, Card, CardSurface } from '@components/ui';
 
 export default function OutreachManager() {
   const { user }       = useAuth();
@@ -497,7 +498,7 @@ export default function OutreachManager() {
 
       {/* SMTP warning */}
       {!smtpStatus?.configured && (
-        <div className="card card-body bg-amber-50 border-amber-300">
+        <CardSurface className="border-amber-300 bg-amber-50">
           <div className="flex items-start gap-3">
             <Mail className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -514,33 +515,33 @@ export default function OutreachManager() {
               Setup Now
             </button>
           </div>
-        </div>
+        </CardSurface>
       )}
 
       {/* Stats + actions — hidden in single-company mode */}
       {!singleCompany && (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="card card-body text-center">
+        <CardSurface className="text-center">
           <div className="text-2xl font-bold text-gray-900">{data.companies.length}</div>
-          <div className="text-xs text-gray-500 mt-0.5">Companies</div>
-        </div>
-        <div className="card card-body text-center">
+          <div className="mt-0.5 text-xs text-gray-500">Companies</div>
+        </CardSurface>
+        <CardSurface className="text-center">
           <div className="text-2xl font-bold text-green-600">{data.withEmail}</div>
-          <div className="text-xs text-gray-500 mt-0.5">HR Emails Found</div>
-        </div>
-        <div className="card card-body text-center">
+          <div className="mt-0.5 text-xs text-gray-500">HR Emails Found</div>
+        </CardSurface>
+        <CardSurface className="text-center">
           <div className="text-2xl font-bold text-blue-600">{Object.keys(previews).length}</div>
-          <div className="text-xs text-gray-500 mt-0.5">Emails Generated</div>
-        </div>
-        <div className="card card-body text-center">
+          <div className="mt-0.5 text-xs text-gray-500">Emails Generated</div>
+        </CardSurface>
+        <CardSurface className="text-center">
           <div className="text-2xl font-bold text-purple-600">{Object.keys(sent).length}</div>
-          <div className="text-xs text-gray-500 mt-0.5">Emails Sent</div>
-        </div>
+          <div className="mt-0.5 text-xs text-gray-500">Emails Sent</div>
+        </CardSurface>
       </div>
       )}
 
       {/* Resume attachment toggle */}
-      <div className="card card-body py-3">
+      <CardSurface className="py-3">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <button
@@ -585,11 +586,11 @@ export default function OutreachManager() {
             </a>
           )}
         </div>
-      </div>
+      </CardSurface>
 
       {/* Bulk actions — hidden in single-company mode */}
       {!singleCompany && (
-      <div className="card card-body bg-blue-50 border-blue-200">
+      <CardSurface className="border-blue-200 bg-blue-50">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <p className="font-semibold text-blue-800">
@@ -624,7 +625,7 @@ export default function OutreachManager() {
             </button>
           </div>
         </div>
-      </div>
+      </CardSurface>
       )}
 
       {/* Companies with emails */}
@@ -636,12 +637,12 @@ export default function OutreachManager() {
           </h2>
 
           {withEmail.map(company => (
-            <div
+            <Card
               key={company.company}
               className={cn(
-                'card overflow-hidden transition-all',
+                'overflow-hidden transition-all',
                 selected.includes(company.company) ? 'border-blue-300' : '',
-                sent[company.company] ? 'border-green-300 bg-green-50/30' : ''
+                sent[company.company] ? 'border-green-300 bg-green-50/30' : '',
               )}
             >
               {/* Company header */}
@@ -673,16 +674,26 @@ export default function OutreachManager() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-gray-900">{company.company}</h3>
-                      <span className={cn(
-                        'badge text-xs',
-                        company.recruiterSource === 'hunter' ? 'badge-green' :
-                        company.recruiterSource === 'apollo' ? 'badge-blue' : 'badge-gray'
-                      )}>
-                        {company.recruiterSource === 'hunter' ? '✓ Verified' :
-                         company.recruiterSource === 'apollo' ? '✓ Apollo' : 'Pattern'}
-                      </span>
+                      <Badge
+                        variant={
+                          company.recruiterSource === 'hunter'
+                            ? 'green'
+                            : company.recruiterSource === 'apollo'
+                              ? 'blue'
+                              : 'gray'
+                        }
+                        className="text-xs"
+                      >
+                        {company.recruiterSource === 'hunter'
+                          ? '✓ Verified'
+                          : company.recruiterSource === 'apollo'
+                            ? '✓ Apollo'
+                            : 'Pattern'}
+                      </Badge>
                       {sent[company.company] && (
-                        <span className="badge badge-green text-xs">✓ Email Sent</span>
+                        <Badge variant="green" className="text-xs">
+                          ✓ Email Sent
+                        </Badge>
                       )}
                     </div>
 
@@ -753,13 +764,18 @@ export default function OutreachManager() {
                                   <span className="text-xs text-gray-500">{contact.name}</span>
                                 )}
                                 {contact.confidence > 0 && (
-                                  <span className={cn(
-                                    'badge text-xs',
-                                    contact.confidence >= 70 ? 'badge-green' :
-                                    contact.confidence >= 40 ? 'badge-amber' : 'badge-gray'
-                                  )}>
+                                  <Badge
+                                    variant={
+                                      contact.confidence >= 70
+                                        ? 'green'
+                                        : contact.confidence >= 40
+                                          ? 'amber'
+                                          : 'gray'
+                                    }
+                                    className="text-xs"
+                                  >
                                     {contact.confidence}% confidence
-                                  </span>
+                                  </Badge>
                                 )}
                                 {contact.linkedin && (
                                   <a href={contact.linkedin} target="_blank" rel="noopener noreferrer"
@@ -792,12 +808,14 @@ export default function OutreachManager() {
                     {/* Jobs under this company */}
                     <div className="mt-2 flex gap-1 flex-wrap">
                       {company.jobs.slice(0, 3).map(job => (
-                        <span key={job._id} className="badge badge-gray text-xs">
+                        <Badge key={job._id} variant="gray" className="text-xs">
                           {job.title} · {job.matchScore}%
-                        </span>
+                        </Badge>
                       ))}
                       {company.jobs.length > 3 && (
-                        <span className="badge badge-gray text-xs">+{company.jobs.length - 3} more</span>
+                        <Badge variant="gray" className="text-xs">
+                          +{company.jobs.length - 3} more
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -869,15 +887,20 @@ export default function OutreachManager() {
                           <span className="text-xs font-medium text-gray-600">
                             {composeMode[company.company] === 'manual' ? 'Compose Email' : 'Email Preview'}
                           </span>
-                          {composeMode[company.company] === 'manual'
-                            ? <span className="badge badge-gray text-xs flex items-center gap-1"><PenLine className="w-2.5 h-2.5" /> Manual</span>
-                            : <span className="badge badge-green text-xs flex items-center gap-1"><Sparkles className="w-2.5 h-2.5" /> AI Generated</span>
-                          }
+                          {composeMode[company.company] === 'manual' ? (
+                            <Badge variant="gray" className="flex items-center gap-1 text-xs">
+                              <PenLine className="h-2.5 w-2.5 shrink-0" aria-hidden /> Manual
+                            </Badge>
+                          ) : (
+                            <Badge variant="green" className="flex items-center gap-1 text-xs">
+                              <Sparkles className="h-2.5 w-2.5 shrink-0" aria-hidden /> AI Generated
+                            </Badge>
+                          )}
                           {(attachResume || optimizedResumes[company.company]) && (
-                            <span className="badge badge-blue text-xs flex items-center gap-1">
-                              <Paperclip className="w-2.5 h-2.5" />
+                            <Badge variant="blue" className="flex items-center gap-1 text-xs">
+                              <Paperclip className="h-2.5 w-2.5 shrink-0" aria-hidden />
                               {optimizedResumes[company.company] ? 'Resume + ATS Analysis' : 'Resume'}
-                            </span>
+                            </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
@@ -931,9 +954,9 @@ export default function OutreachManager() {
                       )}
                       {optimizedResumes[company.company] && (
                         <div className="px-3 py-1.5 border-t border-gray-200 flex items-center gap-2">
-                          <span className="badge bg-purple-100 text-purple-700 text-xs flex items-center gap-1">
-                            <Wand2 className="w-3 h-3" /> ATS Optimized
-                          </span>
+                          <Badge variant="purple" className="flex items-center gap-1 text-xs">
+                            <Wand2 className="h-3 w-3 shrink-0" aria-hidden /> ATS Optimized
+                          </Badge>
                           <button
                             onClick={() => setShowComparison(p => ({ ...p, [company.company]: !p[company.company] }))}
                             className="text-xs text-purple-600 hover:text-purple-800 underline underline-offset-2"
@@ -1058,7 +1081,9 @@ export default function OutreachManager() {
                               </p>
                               <div className="flex flex-wrap gap-1">
                                 {opt.keywordsAdded.map((kw, i) => (
-                                  <span key={i} className="badge bg-green-100 text-green-700 text-xs border border-green-200">+ {kw}</span>
+                                  <Badge key={i} variant="green" className="text-xs">
+                                    + {kw}
+                                  </Badge>
                                 ))}
                               </div>
                             </div>
@@ -1164,7 +1189,7 @@ export default function OutreachManager() {
                   </div>
                 )}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -1198,17 +1223,17 @@ export default function OutreachManager() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {withoutEmail.map(company => (
-              <div key={company.company} className="card card-body py-3 opacity-60">
+              <CardSurface key={company.company} className="py-3 opacity-60">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 font-bold text-sm flex-shrink-0">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm font-bold text-gray-400">
                     {company.company[0]?.toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-700 truncate">{company.company}</p>
+                    <p className="truncate text-sm font-medium text-gray-700">{company.company}</p>
                     <p className="text-xs text-gray-400">{company.jobs.length} jobs</p>
                   </div>
                 </div>
-              </div>
+              </CardSurface>
             ))}
           </div>
         </div>

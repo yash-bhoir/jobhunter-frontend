@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '@utils/axios';
 import { cn } from '@utils/helpers';
+import { Badge } from '@components/ui';
 
 export default function CompanyResearch({ jobId, company, endpoint }) {
   const [data,    setData]    = useState(null);
@@ -167,7 +168,9 @@ export default function CompanyResearch({ jobId, company, endpoint }) {
               <p className="text-xs font-semibold text-gray-600 mb-1">Tech Stack</p>
               <div className="flex flex-wrap gap-1">
                 {data.techStack.map(t => (
-                  <span key={t} className="badge badge-gray text-xs">{t}</span>
+                  <Badge key={t} variant="gray" className="text-xs">
+                    {t}
+                  </Badge>
                 ))}
               </div>
             </div>

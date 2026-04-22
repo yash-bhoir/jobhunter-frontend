@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Eye, EyeOff, Briefcase, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { api } from '@utils/axios';
 import { useToast } from '@hooks/useToast';
+import { Card, CardBody } from '@components/ui';
 
 const schema = z.object({
   password: z
@@ -103,8 +104,8 @@ export default function ResetPassword() {
           <p className="text-gray-500 mt-1 text-sm">Set your new password</p>
         </div>
 
-        <div className="card shadow-xl shadow-gray-100">
-          <div className="card-body">
+        <Card className="shadow-xl shadow-gray-100">
+          <CardBody>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Reset Password</h2>
             <p className="text-sm text-gray-500 mb-6">
               Choose a strong password with uppercase, lowercase and a number.
@@ -172,8 +173,8 @@ export default function ResetPassword() {
                 Sign in
               </Link>
             </p>
-          </div>
-        </div>
+          </CardBody>
+        </Card>
       </div>
     </div>
   );

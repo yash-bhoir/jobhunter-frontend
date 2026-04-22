@@ -57,6 +57,17 @@ const itemFade = {
   show:   { opacity: 1, y: 0, transition: { duration: 0.25 } },
 };
 
+/** Backend may send done, cached, skipped, or cluster reuse statuses */
+function isTerminalSearchProgress(s) {
+  return (
+    s === 'done'
+    || s === 'cached'
+    || s === 'skipped'
+    || s === 'reused_snapshot'
+    || s === 'reused_sibling_snapshot'
+  );
+}
+
 export default function Search() {
   const { user }  = useAuth();
   const toast     = useToast();
@@ -93,7 +104,12 @@ export default function Search() {
   const locDebounce   = useRef(null);
   const locInputRef   = useRef(null);
   const locDropRef    = useRef(null);
-  const cacheDebounce = useRef(null);
+  const cacheDebounce   = useRef(null);
+  const platformsRef    = useRef(platforms);
+
+  useEffect(() => {
+    platformsRef.current = platforms;
+  }, [platforms]);
 
   const RADIUS_OPTIONS = [
     { label: 'Any', value: 0 },
@@ -186,7 +202,31 @@ export default function Search() {
   }, []);
 
   useSocket('search:progress', (data) => {
-    setProgress(prev => ({ ...prev, [data.platform]: data }));
+    setProgress((prev) => {
+      const clusterReuse =
+        data.platform === 'cluster'
+        || data.status === 'reused_snapshot'
+        || data.status === 'reused_sibling_snapshot';
+      if (clusterReuse) {
+        const ids = platformsRef.current?.length ? platformsRef.current : [];
+        const total = Math.max(0, Number(data.found) || 0);
+        const n = Math.max(ids.length, 1);
+        const base = Math.floor(total / n);
+        const rem = total - base * n;
+        const next = { ...prev, cluster: data };
+        ids.forEach((pid, i) => {
+          next[pid] = {
+            platform:       pid,
+            found:          base + (i < rem ? 1 : 0),
+            status:         'done',
+            sourceCluster:  true,
+            clusterStatus:  data.status,
+          };
+        });
+        return next;
+      }
+      return { ...prev, [data.platform]: data };
+    });
     dispatch(updateProgress(data));
   });
   useSocket('search:email_finding', (data) => {
@@ -248,7 +288,8 @@ export default function Search() {
       if (data.data.fromCache) toast.success('Loaded from cache — saved 10 credits!');
       else toast.success(`Found ${data.data.totalFound} jobs!`);
       api.get('/search/history?limit=6').then(({ data: h }) => setHistory(h.data || [])).catch(() => {});
-      // No auto-navigate — results shown inline
+      const sid = data.data?.searchId;
+      navigate(sid ? `/results?searchId=${sid}` : '/results', { replace: false });
     } catch (err) {
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
         toast('Search is taking longer than usual — checking results…');
@@ -708,13 +749,26 @@ export default function Search() {
                 <div className="space-y-2">
                   {userPlatforms.filter(p => platforms.includes(p.id)).map((platform, i) => {
                     const p = progress[platform.id];
-                    const status = !p ? 'waiting' : p.status === 'done' ? 'done' : p.status === 'error' ? 'error' : 'running';
+                    const status = !p
+                      ? 'waiting'
+                      : isTerminalSearchProgress(p.status)
+                        ? 'done'
+                        : p.status === 'error'
+                          ? 'error'
+                          : 'running';
+                    const doneLabel = () => {
+                      if (!p) return '—';
+                      if (p.sourceCluster) return '✓ Shared pool';
+                      if (p.status === 'cached') return `✓ ${p.found} cached`;
+                      if (p.status === 'skipped') return '— Skipped';
+                      return `✓ ${p.found} jobs`;
+                    };
                     return (
                       <motion.div key={platform.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3">
                         <span className={cn('w-2 h-2 rounded-full flex-shrink-0', status === 'done' ? 'bg-emerald-500' : status === 'error' ? 'bg-red-400' : status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-gray-200')} />
                         <span className="text-sm text-gray-700 flex-1">{platform.name}</span>
                         <span className={cn('text-xs font-medium', status === 'done' ? 'text-emerald-600' : status === 'error' ? 'text-red-400' : 'text-gray-300')}>
-                          {status === 'done' ? `✓ ${p.found} jobs` : status === 'error' ? '✗ Failed' : status === 'running' ? 'Searching…' : '—'}
+                          {status === 'done' ? doneLabel() : status === 'error' ? '✗ Failed' : status === 'running' ? 'Searching…' : '—'}
                         </span>
                       </motion.div>
                     );

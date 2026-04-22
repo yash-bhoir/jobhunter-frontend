@@ -8,6 +8,7 @@ import {
 import { api }  from '@utils/axios';
 import { cn }   from '@utils/helpers';
 import { Link } from 'react-router-dom';
+import { Badge } from '@components/ui';
 
 const container = {
   hidden: {},
@@ -197,11 +198,13 @@ export default function Insights() {
           ) : data?.remoteVsOnsite ? (
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Remote', d: data.remoteVsOnsite.remote,  color: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700' },
-                { label: 'On-site', d: data.remoteVsOnsite.onsite, color: 'bg-blue-500',    badge: 'bg-blue-50 text-blue-700'       },
-              ].map(({ label, d, color, badge }) => (
+                { label: 'Remote', d: data.remoteVsOnsite.remote, color: 'bg-emerald-500', badgeVariant: 'green' },
+                { label: 'On-site', d: data.remoteVsOnsite.onsite, color: 'bg-blue-500', badgeVariant: 'blue' },
+              ].map(({ label, d, color, badgeVariant }) => (
                 <div key={label} className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-center">
-                  <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-2 ${badge}`}>{label}</span>
+                  <Badge variant={badgeVariant} size="sm" className="mb-2 inline-block font-bold">
+                    {label}
+                  </Badge>
                   <p className="text-2xl font-black text-gray-900">{d?.applied ?? 0}</p>
                   <p className="text-[10px] text-gray-400">applied</p>
                   <div className="flex justify-center gap-3 mt-2">
@@ -234,14 +237,16 @@ export default function Insights() {
           ) : data?.hrEmailImpact ? (
             <div className="space-y-3">
               {[
-                { label: 'With HR Email',    d: data.hrEmailImpact.withEmail,    badge: 'bg-violet-50 text-violet-700' },
-                { label: 'Without HR Email', d: data.hrEmailImpact.withoutEmail, badge: 'bg-gray-100 text-gray-600'    },
-              ].map(({ label, d, badge }) => {
+                { label: 'With HR Email', d: data.hrEmailImpact.withEmail, badgeVariant: 'violet' },
+                { label: 'Without HR Email', d: data.hrEmailImpact.withoutEmail, badgeVariant: 'gray' },
+              ].map(({ label, d, badgeVariant }) => {
                 const cbr = d?.applied > 0 ? Math.round(((d.interviews || 0) / d.applied) * 100) : 0;
                 return (
                   <div key={label} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
                     <div className="flex-1">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>{label}</span>
+                      <Badge variant={badgeVariant} size="sm" className="text-[10px] font-bold">
+                        {label}
+                      </Badge>
                       <p className="text-xs text-gray-500 mt-1">{d?.applied ?? 0} applied · {d?.interviews ?? 0} interviews</p>
                     </div>
                     <div className="text-right">

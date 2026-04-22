@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2, Briefcase } from 'lucide-react';
 import { api } from '@utils/axios';
+import { CardSurface } from '@components/ui';
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
@@ -17,7 +18,7 @@ export default function VerifyEmail() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="card card-body shadow-xl max-w-md w-full text-center">
+      <CardSurface className="max-w-md w-full text-center shadow-xl">
         <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600 rounded-2xl mb-4 mx-auto">
           <Briefcase className="w-7 h-7 text-white" />
         </div>
@@ -50,7 +51,7 @@ export default function VerifyEmail() {
             <Link to="/register" className="btn btn-primary w-full mt-6">Register again</Link>
           </>
         )}
-      </div>
+      </CardSurface>
     </div>
   );
 }

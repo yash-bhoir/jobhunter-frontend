@@ -3,6 +3,7 @@ import { Key, CheckCircle, AlertCircle, Eye, EyeOff, Save, TestTube, Loader2 } f
 import { api }      from '@utils/axios';
 import { useToast } from '@hooks/useToast';
 import { cn }       from '@utils/helpers';
+import { Badge, Card, CardHeader, CardSurface } from '@components/ui';
 
 export default function AdminApiKeys() {
   const toast = useToast();
@@ -72,9 +73,9 @@ export default function AdminApiKeys() {
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="card card-body flex items-center gap-3">
-          <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-            <CheckCircle className="w-5 h-5 text-green-600" />
+        <CardSurface className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100">
+            <CheckCircle className="h-5 w-5 text-green-600" />
           </div>
           <div>
             <div className="text-2xl font-bold text-gray-900">
@@ -82,10 +83,10 @@ export default function AdminApiKeys() {
             </div>
             <div className="text-sm text-gray-500">Keys configured</div>
           </div>
-        </div>
-        <div className="card card-body flex items-center gap-3">
-          <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-            <AlertCircle className="w-5 h-5 text-red-500" />
+        </CardSurface>
+        <CardSurface className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
+            <AlertCircle className="h-5 w-5 text-red-500" />
           </div>
           <div>
             <div className="text-2xl font-bold text-gray-900">
@@ -93,15 +94,15 @@ export default function AdminApiKeys() {
             </div>
             <div className="text-sm text-gray-500">Keys missing</div>
           </div>
-        </div>
+        </CardSurface>
       </div>
 
       {/* Keys by category */}
       {CATEGORIES.map(cat => (
-        <div key={cat} className="card overflow-hidden">
-          <div className="card-header">
-            <h2 className="font-semibold text-gray-900 capitalize">{cat} APIs</h2>
-          </div>
+        <Card key={cat} className="overflow-hidden">
+          <CardHeader>
+            <h2 className="font-semibold capitalize text-gray-900">{cat} APIs</h2>
+          </CardHeader>
           <div className="divide-y divide-gray-100">
             {keys.filter(k => k.category === cat).map(key => (
               <div key={key.key} className="p-4">
@@ -114,9 +115,9 @@ export default function AdminApiKeys() {
                     <p className="font-medium text-gray-900 text-sm">{key.label}</p>
                     <p className="text-xs text-gray-400 font-mono">{key.key}</p>
                   </div>
-                  <span className={cn('badge text-xs', key.configured ? 'badge-green' : 'badge-red')}>
+                  <Badge variant={key.configured ? 'green' : 'red'} className="text-xs">
                     {key.configured ? 'Active' : 'Not set'}
-                  </span>
+                  </Badge>
                 </div>
 
                 {/* Current value */}
@@ -170,7 +171,7 @@ export default function AdminApiKeys() {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   );

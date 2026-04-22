@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Send, Megaphone, Loader2, AlertTriangle } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useToast } from '@hooks/useToast';
+import { CardSurface } from '@components/ui';
 
 export default function AdminComms() {
   const toast = useToast();
@@ -63,7 +64,7 @@ export default function AdminComms() {
       </div>
 
       {tab === 'broadcast' && (
-        <div className="card card-body space-y-4">
+        <CardSurface className="space-y-4">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
             <Send className="w-4 h-4" /> Broadcast Email
           </h2>
@@ -87,11 +88,11 @@ export default function AdminComms() {
           <button onClick={sendBroadcast} disabled={loading} className="btn btn-primary">
             {loading?<Loader2 className="w-4 h-4 animate-spin"/>:<Send className="w-4 h-4"/>} Send Broadcast
           </button>
-        </div>
+        </CardSurface>
       )}
 
       {tab === 'banner' && (
-        <div className="card card-body space-y-4">
+        <CardSurface className="space-y-4">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Megaphone className="w-4 h-4"/> In-App Banner</h2>
           <div>
             <label className="label">Banner Message</label>
@@ -109,11 +110,11 @@ export default function AdminComms() {
             <button onClick={saveBanner} disabled={loading} className="btn btn-primary">Set Banner</button>
             <button onClick={removeBanner} className="btn btn-danger">Remove Banner</button>
           </div>
-        </div>
+        </CardSurface>
       )}
 
       {tab === 'maintenance' && (
-        <div className="card card-body space-y-4">
+        <CardSurface className="space-y-4">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500"/> Maintenance Mode</h2>
           <p className="text-sm text-gray-500">When enabled, all users see a maintenance page. Admins can still access the platform.</p>
           <div className={`p-4 rounded-xl border-2 ${maintenance.enabled?'border-red-400 bg-red-50':'border-gray-200'}`}>
@@ -127,7 +128,7 @@ export default function AdminComms() {
               </button>
             </div>
           </div>
-        </div>
+        </CardSurface>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sparkles, Loader2, ChevronDown, ChevronUp, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { api } from '@utils/axios';
 import { cn }  from '@utils/helpers';
+import { Badge } from '@components/ui';
 
 export default function MatchExplainer({ jobId, matchScore, endpoint }) {
   const [data,    setData]    = useState(null);
@@ -80,7 +81,9 @@ export default function MatchExplainer({ jobId, matchScore, endpoint }) {
               <p className="text-xs font-semibold text-amber-700 mb-1">Missing Skills</p>
               <div className="flex flex-wrap gap-1">
                 {data.missingSkills.map(s => (
-                  <span key={s} className="badge badge-amber text-xs">{s}</span>
+                  <Badge key={s} variant="amber" className="text-xs">
+                    {s}
+                  </Badge>
                 ))}
               </div>
             </div>

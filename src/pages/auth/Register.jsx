@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Eye, EyeOff, Briefcase, Loader2, CheckCircle } from 'lucide-react';
 import { useAuth } from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
+import { CardSurface } from '@components/ui';
 
 const schema = z.object({
   firstName: z.string().min(1, 'First name required').max(50),
@@ -42,22 +43,22 @@ export default function Register() {
 
   if (registered) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="card shadow-elevated max-w-md w-full text-center px-8 py-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4 mx-auto">
-            <CheckCircle className="w-8 h-8 text-emerald-600" />
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <CardSurface className="max-w-md w-full text-center shadow-elevated px-8 py-10">
+          <div className="mx-auto mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+            <CheckCircle className="h-8 w-8 text-emerald-600" aria-hidden />
           </div>
           <h2 className="text-xl font-bold text-gray-900">Check your email!</h2>
-          <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+          <p className="mt-2 text-sm leading-relaxed text-gray-500">
             We sent a verification link to your inbox. Click it to activate your account.
           </p>
           <button
             onClick={() => navigate('/login')}
-            className="btn btn-primary w-full mt-6 py-3 text-base"
+            className="btn btn-primary mt-6 w-full py-3 text-base"
           >
             Back to Login
           </button>
-        </div>
+        </CardSurface>
       </div>
     );
   }
@@ -95,10 +96,9 @@ export default function Register() {
       </div>
 
       {/* ── Form card ─────────────────────────────────────────────── */}
-      <div className="flex-1 flex items-start justify-center px-4 sm:px-8 -mt-4 pb-8">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-elevated px-6 py-7 sm:px-8 sm:py-8 animate-fade-in-up">
-
-          <h2 className="text-lg font-bold text-gray-900 mb-5">Create your account</h2>
+      <div className="-mt-4 flex flex-1 items-start justify-center px-4 pb-8 sm:px-8">
+        <CardSurface className="w-full max-w-md animate-fade-in-up shadow-elevated px-6 py-8 sm:px-8">
+          <h2 className="mb-5 text-lg font-bold text-gray-900">Create your account</h2>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
@@ -175,13 +175,13 @@ export default function Register() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-5">
+          <p className="mt-5 text-center text-sm text-gray-500">
             Already have an account?{' '}
-            <Link to="/login" className="text-blue-600 font-semibold hover:text-blue-700">
+            <Link to="/login" className="font-semibold text-blue-600 hover:text-blue-700">
               Sign in
             </Link>
           </p>
-        </div>
+        </CardSurface>
       </div>
 
     </div>

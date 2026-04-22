@@ -1,15 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  Eye, EyeOff, Loader2, AlertCircle,
+  Eye, EyeOff, AlertCircle,
   Briefcase, Search, Mail, TrendingUp, Zap, ShieldCheck, ArrowLeft,
 } from 'lucide-react';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { api } from '@utils/axios';
+import { Button, Input, FormControl, FormLabel, FormError, Heading, Text } from '@components/ui';
 
 const schema = z.object({
   email:    z.string().email('Valid email required'),
@@ -107,14 +108,18 @@ function AdminOtpScreen({ userId, onBack }) {
           <ShieldCheck className="w-5 h-5 text-blue-600" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Admin verification</h2>
-          <p className="text-xs text-gray-500">Check your email for the 6-digit code</p>
+          <Heading as="h2" variant="h4" className="text-gray-900">
+            Admin verification
+          </Heading>
+          <Text variant="caption" tone="muted" className="mt-0.5">
+            Check your email for the 6-digit code
+          </Text>
         </div>
       </div>
 
-      <p className="text-sm text-gray-600 mb-6 bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
+      <Text variant="small" tone="default" className="mb-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-gray-600">
         A verification code was sent to your registered email. It expires in <strong>10 minutes</strong>.
-      </p>
+      </Text>
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* OTP boxes */}
@@ -138,31 +143,36 @@ function AdminOtpScreen({ userId, onBack }) {
         </div>
 
         {error && (
-          <p className="flex items-center gap-1.5 text-sm text-red-600">
-            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-          </p>
+          <Text variant="small" tone="danger" role="alert" className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden /> {error}
+          </Text>
         )}
 
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="lg"
+          className="w-full"
+          loading={loading}
           disabled={loading || otp.join('').length < 6}
-          className="btn btn-primary w-full py-3 text-base"
         >
-          {loading
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying...</>
-            : 'Verify & Sign in'
-          }
-        </button>
+          {loading ? 'Verifying…' : 'Verify & Sign in'}
+        </Button>
       </form>
 
       <div className="mt-5 flex items-center justify-between text-sm">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 transition-colors"
+          className="h-auto min-h-0 justify-start gap-1.5 px-0 py-2 text-sm font-normal text-gray-500 hover:bg-transparent hover:text-gray-700"
         >
-          <ArrowLeft className="w-4 h-4" /> Back to login
-        </button>
-        <span className="text-gray-400 text-xs">Didn&apos;t receive it? Check spam</span>
+          <ArrowLeft className="w-4 h-4 shrink-0" aria-hidden /> Back to login
+        </Button>
+        <Text variant="caption" tone="subtle" as="span">
+          Didn&apos;t receive it? Check spam
+        </Text>
       </div>
     </div>
   );
@@ -170,6 +180,8 @@ function AdminOtpScreen({ userId, onBack }) {
 
 // ── Main Login page ───────────────────────────────────────────────
 export default function Login() {
+  const emailFieldId = useId();
+  const passwordFieldId = useId();
   const [showPass,  setShowPass]  = useState(false);
   const [loading,   setLoading]   = useState(false);
   const [otpState,  setOtpState]  = useState(null); // { userId }
@@ -182,6 +194,9 @@ export default function Login() {
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
   });
+
+  const { ref: emailFormRef, ...emailRegister } = register('email');
+  const { ref: passwordFormRef, ...passwordRegister } = register('password');
 
   const onSubmit = async (data) => {
     setLoading(true);
@@ -222,11 +237,15 @@ export default function Login() {
             <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
               <Briefcase className="w-[18px] h-[18px] text-white" />
             </div>
-            <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
+            <span className="font-heading text-lg font-bold tracking-tight text-white">JobHunter</span>
           </div>
           <div className="relative z-10">
-            <h1 className="text-xl font-bold text-white">Two-step verification</h1>
-            <p className="mt-1 text-slate-400 text-sm">Admin portal requires email confirmation</p>
+            <Heading as="h1" variant="h2" className="text-white">
+              Two-step verification
+            </Heading>
+            <Text variant="small" tone="lead" className="mt-1">
+              Admin portal requires email confirmation
+            </Text>
           </div>
         </div>
 
@@ -257,43 +276,49 @@ export default function Login() {
             <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
               <Briefcase className="w-5 h-5 text-white" />
             </div>
-            <span className="text-white font-bold text-xl tracking-tight">JobHunter</span>
+            <span className="font-heading text-xl font-bold tracking-tight text-white">JobHunter</span>
           </div>
         </div>
 
         <div className="relative z-10 space-y-8">
           <div>
-            <h2 className="text-4xl font-bold text-white leading-tight">
+            <Heading as="h2" variant="display" className="text-white">
               Land your dream job<br />
               <span className="text-blue-400">10x faster.</span>
-            </h2>
-            <p className="mt-4 text-slate-400 text-base leading-relaxed max-w-sm">
+            </Heading>
+            <Text variant="body" tone="lead" className="mt-4 max-w-sm">
               AI-powered search across every major platform, with recruiter contacts delivered automatically.
-            </p>
+            </Text>
           </div>
           <ul className="space-y-3.5">
             {features.map(({ icon: Icon, text }) => (
               <li key={text} className="flex items-start gap-3">
-                <div className="mt-0.5 w-6 h-6 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-                  <Icon className="w-3.5 h-3.5 text-blue-400" />
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-blue-500/20">
+                  <Icon className="h-3.5 w-3.5 text-blue-400" aria-hidden />
                 </div>
-                <span className="text-slate-300 text-sm leading-snug">{text}</span>
+                <Text as="span" variant="small" tone="hero" className="leading-snug">
+                  {text}
+                </Text>
               </li>
             ))}
           </ul>
           <div className="flex gap-6 pt-2">
             {stats.map(({ value, label }) => (
               <div key={label}>
-                <p className="text-2xl font-bold text-white">{value}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+                <Heading as="p" variant="h3" className="text-2xl text-white">
+                  {value}
+                </Heading>
+                <Text variant="caption" tone="subtle" className="mt-0.5 text-slate-500">
+                  {label}
+                </Text>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="relative z-10 text-xs text-slate-600">
+        <Text variant="caption" tone="subtle" className="relative z-10 text-slate-600">
           © {new Date().getFullYear()} JobHunter · Built for serious job seekers
-        </p>
+        </Text>
       </div>
 
       {/* ── Mobile hero banner ────────────────────────────────────── */}
@@ -307,24 +332,28 @@ export default function Login() {
           <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
             <Briefcase className="w-[18px] h-[18px] text-white" />
           </div>
-          <span className="text-white font-bold text-lg tracking-tight">JobHunter</span>
+          <span className="font-heading text-lg font-bold tracking-tight text-white">JobHunter</span>
         </div>
 
         <div className="relative z-10 mb-6">
-          <h1 className="text-2xl font-bold text-white leading-snug">
+          <Heading as="h1" variant="h2" className="text-white">
             Land your dream job<br />
             <span className="text-blue-400">10x faster.</span>
-          </h1>
-          <p className="mt-2 text-slate-400 text-sm leading-relaxed">
+          </Heading>
+          <Text variant="small" tone="lead" className="mt-2 leading-relaxed">
             AI-powered search across 21+ platforms with recruiter contacts.
-          </p>
+          </Text>
         </div>
 
         <div className="relative z-10 flex gap-5">
           {stats.map(({ value, label }) => (
             <div key={label} className="flex flex-col">
-              <span className="text-xl font-bold text-white">{value}</span>
-              <span className="text-xs text-slate-500">{label}</span>
+              <Heading as="span" variant="h3" className="text-xl text-white">
+                {value}
+              </Heading>
+              <Text variant="caption" tone="subtle" className="text-slate-500">
+                {label}
+              </Text>
             </div>
           ))}
         </div>
@@ -343,94 +372,119 @@ export default function Login() {
                         mb-6 lg:mb-0">
 
           <div className="mb-6 lg:mb-8">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Welcome back</h2>
-            <p className="text-sm text-gray-500 mt-1">Sign in to continue your job search</p>
+            <Heading as="h2" variant="title">
+              Welcome back
+            </Heading>
+            <Text variant="small" tone="muted" className="mt-1">
+              Sign in to continue your job search
+            </Text>
           </div>
 
           {urlError && (
-            <div className="mb-5 p-3.5 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-              <p className="text-sm text-red-700">Google sign-in failed. Please try again.</p>
+            <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-red-100 bg-red-50 p-3.5">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
+              <Text variant="small" tone="danger" as="p" className="m-0">
+                Google sign-in failed. Please try again.
+              </Text>
             </div>
           )}
 
-          <button
-            onClick={handleGoogleLogin}
+          <Button
             type="button"
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border
-                       border-gray-200 bg-white text-sm font-semibold text-gray-700 shadow-sm
-                       hover:bg-gray-50 hover:border-gray-300 transition-all duration-150 active:scale-[0.99]"
+            variant="outline"
+            size="lg"
+            className="w-full gap-3 shadow-sm active:scale-[0.99]"
+            onClick={handleGoogleLogin}
           >
             <GoogleIcon />
             Continue with Google
-          </button>
+          </Button>
 
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-100" />
             </div>
             <div className="relative flex justify-center">
-              <span className="bg-white px-3 text-xs text-gray-400 tracking-wide">or continue with email</span>
+              <Text
+                as="span"
+                variant="caption"
+                tone="subtle"
+                className="bg-white px-3 tracking-wide text-gray-400"
+              >
+                or continue with email
+              </Text>
             </div>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <label className="label">Email address</label>
-              <input
-                {...register('email')}
+            <FormControl>
+              <FormLabel htmlFor={emailFieldId}>Email address</FormLabel>
+              <Input
+                id={emailFieldId}
+                ref={emailFormRef}
+                {...emailRegister}
                 type="email"
                 placeholder="you@example.com"
-                className={`input ${errors.email ? 'input-error' : ''}`}
+                error={Boolean(errors.email)}
                 autoComplete="email"
+                aria-describedby={errors.email ? `${emailFieldId}-err` : undefined}
               />
-              {errors.email && <p className="error-text">{errors.email.message}</p>}
-            </div>
+              <FormError id={`${emailFieldId}-err`} message={errors.email?.message} />
+            </FormControl>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="label mb-0">Password</label>
-                <Link to="/forgot-password" className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+            <FormControl>
+              <div className="flex items-center justify-between gap-2">
+                <FormLabel htmlFor={passwordFieldId} className="mb-0">
+                  Password
+                </FormLabel>
+                <Link to="/forgot-password" className="text-xs text-blue-600 hover:text-blue-700 font-medium shrink-0">
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <input
-                  {...register('password')}
+                <Input
+                  id={passwordFieldId}
+                  ref={passwordFormRef}
+                  {...passwordRegister}
                   type={showPass ? 'text' : 'password'}
                   placeholder="Your password"
-                  className={`input pr-10 ${errors.password ? 'input-error' : ''}`}
+                  className="pr-10"
+                  error={Boolean(errors.password)}
                   autoComplete="current-password"
+                  aria-describedby={errors.password ? `${passwordFieldId}-err` : undefined}
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
                 >
-                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                  {showPass ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}
+                </Button>
               </div>
-              {errors.password && <p className="error-text">{errors.password.message}</p>}
-            </div>
+              <FormError id={`${passwordFieldId}-err`} message={errors.password?.message} />
+            </FormControl>
 
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="lg"
+              className="w-full mt-1"
+              loading={loading}
               disabled={loading}
-              className="btn btn-primary w-full py-3 text-base mt-1"
             >
-              {loading
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</>
-                : 'Sign in'
-              }
-            </button>
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-5">
+          <Text variant="small" tone="muted" className="mt-5 text-center">
             Don&apos;t have an account?{' '}
-            <Link to="/register" className="text-blue-600 font-semibold hover:text-blue-700">
+            <Link to="/register" className="font-semibold text-blue-600 hover:text-blue-700">
               Create one free
             </Link>
-          </p>
+          </Text>
         </div>
       </div>
 

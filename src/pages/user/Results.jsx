@@ -9,8 +9,10 @@ import {
   Sparkles, Lock, Zap, Linkedin, Inbox
 } from 'lucide-react';
 import { api }  from '@utils/axios';
+import { logJobRankingEvent } from '@utils/rankingFeedback';
 import { cn }   from '@utils/helpers';
-import { JOB_STATUS_STYLES, JOB_STATUS_LABELS } from '@utils/constants';
+import { JOB_STATUS_BADGE_VARIANT, JOB_STATUS_LABELS } from '@utils/constants';
+import { Badge } from '@components/ui';
 import { useToast } from '@hooks/useToast';
 import { useAuth }  from '@hooks/useAuth';
 import JobDetailPanel, { SourceBadge, getPlatformMeta } from '../../components/jobs/JobDetailPanel';
@@ -78,7 +80,16 @@ export default function Results() {
 
   useEffect(() => {
     if (!searchId) return;
-    api.get(`/search/${searchId}`).then(({ data }) => setSearchMeta(data.data)).catch(() => {});
+    api.get(`/search/${searchId}`).then(({ data }) => {
+      const meta = data.data;
+      setSearchMeta(meta);
+      const pb = meta?.platformBreakdown;
+      if (pb && typeof pb === 'object') {
+        const obj = pb instanceof Map ? Object.fromEntries(pb) : { ...pb };
+        setPlatformBreak(obj);
+        setAllSources((prev) => [...new Set([...prev, ...Object.keys(obj).filter(Boolean)])].sort());
+      }
+    }).catch(() => {});
   }, [searchId]);
 
   // Fetch counts for all tabs on mount (for badges)
@@ -107,17 +118,30 @@ export default function Results() {
         setJobs(data.data || []);
         setTotal(data.pagination?.total || 0);
       } else {
-        const params = new URLSearchParams({
-          page, limit: 20, sort,
-          ...(sourceTab === 'map'
-            ? { source: 'map-search' }
-            : { excludeSource: 'map-search' }),
-          ...(filter.status && { status: filter.status }),
-          ...(sourceTab === 'search' && filter.source && { source: filter.source }),
-          ...(filter.remote && { remote: filter.remote }),
-          ...(sourceTab === 'search' && searchId && { searchId }),
-        });
-        const { data } = await api.get(`/jobs?${params}`);
+        let data;
+        if (sourceTab === 'search' && searchId) {
+          const params = new URLSearchParams({
+            page: String(page),
+            limit: '20',
+            sort,
+            ...(filter.status && { status: filter.status }),
+            ...(filter.source && { source: filter.source }),
+            ...(filter.remote && { remote: filter.remote }),
+          });
+          ({ data } = await api.get(`/search/${searchId}/jobs?${params}`));
+        } else {
+          const params = new URLSearchParams({
+            page, limit: 20, sort,
+            ...(sourceTab === 'map'
+              ? { source: 'map-search' }
+              : { excludeSource: 'map-search' }),
+            ...(filter.status && { status: filter.status }),
+            ...(sourceTab === 'search' && filter.source && { source: filter.source }),
+            ...(filter.remote && { remote: filter.remote }),
+          });
+          ({ data } = await api.get(`/jobs?${params}`));
+        }
+
         const loadedJobs = data.data || [];
         setJobs(loadedJobs);
         setTotal(data.pagination?.total || 0);
@@ -125,9 +149,9 @@ export default function Results() {
           if (data.pagination?.platformBreakdown) {
             const pb = data.pagination.platformBreakdown;
             setPlatformBreak(pb);
-            setAllSources(prev => [...new Set([...prev, ...Object.keys(pb).filter(Boolean)])].sort());
-          } else if (!filter.source) {
-            setAllSources(prev => [...new Set([...prev, ...loadedJobs.map(j => j.source).filter(Boolean)])].sort());
+            setAllSources((prev) => [...new Set([...prev, ...Object.keys(pb).filter(Boolean)])].sort());
+          } else if (!filter.source && !searchId) {
+            setAllSources((prev) => [...new Set([...prev, ...loadedJobs.map((j) => j.source).filter(Boolean)])].sort());
           }
         }
       }
@@ -135,7 +159,7 @@ export default function Results() {
     finally  { setLoading(false); }
   };
 
-  useEffect(() => { fetchJobs(); }, [page, sort, filter, sourceTab]);
+  useEffect(() => { fetchJobs(); }, [page, sort, filter, sourceTab, searchId]);
 
   const switchTab = (tab) => {
     setSourceTab(tab);
@@ -149,6 +173,7 @@ export default function Results() {
     try {
       await api.post(job.status === 'saved' ? `/jobs/${job._id}/unsave` : `/jobs/${job._id}/save`);
       const ns = job.status === 'saved' ? 'found' : 'saved';
+      logJobRankingEvent(job._id, ns === 'saved' ? 'save' : 'unsave', { source: 'results_list' });
       setJobs(prev => prev.map(j => j._id === job._id ? { ...j, status: ns } : j));
       if (selected?._id === job._id) setSelected(prev => ({ ...prev, status: ns }));
     } catch { toast.error('Failed'); }
@@ -469,17 +494,33 @@ export default function Results() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        {job.remote && <span className="badge badge-green text-xs"><Wifi className="w-3 h-3" /> Remote</span>}
-                        {job.recruiterEmail && <span className="badge badge-blue text-xs"><Mail className="w-3 h-3" /> HR Email</span>}
-                        <span className={cn('badge text-xs', JOB_STATUS_STYLES[job.status])}>{JOB_STATUS_LABELS[job.status]}</span>
+                        {job.remote && (
+                          <Badge variant="green">
+                            <Wifi className="h-3 w-3 shrink-0" aria-hidden /> Remote
+                          </Badge>
+                        )}
+                        {job.recruiterEmail && (
+                          <Badge variant="blue">
+                            <Mail className="h-3 w-3 shrink-0" aria-hidden /> HR Email
+                          </Badge>
+                        )}
+                        <Badge variant={JOB_STATUS_BADGE_VARIANT[job.status] || 'gray'}>
+                          {JOB_STATUS_LABELS[job.status]}
+                        </Badge>
                         {job.liveness === 'expired' && (
-                          <span className="badge text-xs bg-red-100 text-red-600 border border-red-200">Possibly Closed</span>
+                          <Badge variant="critical" size="sm">
+                            Possibly Closed
+                          </Badge>
                         )}
                         {job.liveness === 'uncertain' && (
-                          <span className="badge text-xs bg-amber-100 text-amber-600 border border-amber-200">Unverified</span>
+                          <Badge variant="warning" size="sm">
+                            Unverified
+                          </Badge>
                         )}
                         {job.followUpDate && new Date(job.followUpDate) <= new Date() && (
-                          <span className="badge text-xs bg-violet-100 text-violet-700 border border-violet-200">Follow Up Due</span>
+                          <Badge variant="violet" size="sm">
+                            Follow Up Due
+                          </Badge>
                         )}
                         {job.salary && job.salary !== 'Not specified' && (
                           <span className="text-xs text-gray-400 font-medium">{job.salary}</span>

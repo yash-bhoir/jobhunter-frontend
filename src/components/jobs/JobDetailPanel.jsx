@@ -9,7 +9,7 @@
  *   showDragHandle — show mobile drag handle at top (default false)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   X, Star, Wifi, MapPin, Mail, Send, Users, Search,
@@ -19,13 +19,15 @@ import {
   Trash2, Building,
 } from 'lucide-react';
 import { api }     from '@utils/axios';
+import { logJobRankingEvent, logLinkedInRankingEvent } from '@utils/rankingFeedback';
 import { cn }      from '@utils/helpers';
 import { truncate } from '@utils/formatters';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import MatchExplainer  from './MatchExplainer';
 import CompanyResearch from './CompanyResearch';
-import { JOB_STATUS_STYLES, JOB_STATUS_LABELS } from '@utils/constants';
+import { JOB_STATUS_LABELS } from '@utils/constants';
+import { Badge } from '@components/ui';
 
 // ── Platform badge ────────────────────────────────────────────────
 const PLATFORM_META = {
@@ -76,12 +78,6 @@ const RESULTS_STATUSES  = ['found','saved','applied','interview','offer','reject
 const LINKEDIN_STATUSES = ['new','saved','applied','ignored'];
 
 const LINKEDIN_STATUS_LABELS  = { new: 'New', saved: 'Saved', applied: 'Applied', ignored: 'Ignored' };
-const LINKEDIN_STATUS_STYLES  = {
-  new:     'bg-blue-100 text-blue-700',
-  saved:   'bg-amber-100 text-amber-700',
-  applied: 'bg-emerald-100 text-emerald-700',
-  ignored: 'bg-gray-100 text-gray-500',
-};
 
 // ── Email status badge ────────────────────────────────────────────
 function StatusBadge({ status }) {
@@ -104,9 +100,10 @@ function StatusBadge({ status }) {
 }
 
 // ── Contacts section (HR emails or Employees) ─────────────────────
-function ContactsSection({ title, icon: Icon, iconColor, items, onOutreach }) {
+function ContactsSection({ title, icon: Icon, iconColor, items, onOutreach, onRankingEmailClick }) {
   const [copied, setCopied] = useState('');
   const copy = async (email) => {
+    if (email) onRankingEmailClick?.({ action: 'copy', section: title });
     await navigator.clipboard.writeText(email);
     setCopied(email);
     setTimeout(() => setCopied(''), 2000);
@@ -119,8 +116,13 @@ function ContactsSection({ title, icon: Icon, iconColor, items, onOutreach }) {
           {title} {items.length > 0 && <span className="text-gray-400 font-normal">({items.length})</span>}
         </p>
         {items.length > 0 && onOutreach && (
-          <button onClick={() => onOutreach(items.filter(i => i.email))}
-            className="text-[10px] text-blue-600 font-semibold hover:underline flex items-center gap-0.5">
+          <button
+            onClick={() => {
+              onRankingEmailClick?.({ action: 'outreach_all', section: title });
+              onOutreach(items.filter((i) => i.email));
+            }}
+            className="text-[10px] text-blue-600 font-semibold hover:underline flex items-center gap-0.5"
+          >
             Outreach all <Send className="w-3 h-3" />
           </button>
         )}
@@ -165,8 +167,15 @@ function ContactsSection({ title, icon: Icon, iconColor, items, onOutreach }) {
 }
 
 // ── Deep Eval helpers ─────────────────────────────────────────────
+/** AI returns 0–5; older/cached payloads may already be 0–100. */
+function deepEvalFitOutOf100(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n <= 5 ? Math.round(n * 20) : Math.min(100, Math.round(n));
+}
+
 function ScoreGrade({ score }) {
-  const normalized = score <= 5 ? Math.round(score * 20) : score;
+  const normalized = deepEvalFitOutOf100(score);
   const grade = normalized >= 85 ? 'A' : normalized >= 70 ? 'B' : normalized >= 55 ? 'C' : normalized >= 40 ? 'D' : 'F';
   const style =
     grade === 'A' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
@@ -175,9 +184,18 @@ function ScoreGrade({ score }) {
     grade === 'D' ? 'bg-orange-100 text-orange-700 border-orange-300'    :
                     'bg-red-100 text-red-600 border-red-300';
   return (
-    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-base font-black border ${style}`}>
-      {grade} <span className="text-xs font-semibold opacity-70">({normalized})</span>
-    </span>
+    <div className="flex flex-col gap-1">
+      <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-base font-black border w-fit ${style}`}>
+        <span>{grade}</span>
+        <span className="text-xs font-bold opacity-90 tabular-nums border-l border-current/20 pl-2">
+          {normalized}/100
+        </span>
+      </span>
+      <p className="text-[11px] text-gray-500 leading-snug max-w-xs">
+        <span className="font-semibold text-gray-600">Letter (A–F)</span> is a quick fit summary for this job vs your profile.
+        <span className="font-semibold text-gray-600"> Number</span> is the same fit on a 0–100 scale (higher = stronger match).
+      </p>
+    </div>
   );
 }
 
@@ -186,7 +204,7 @@ function DeepEvalReport({ eval: ev }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between p-4 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-2xl border border-violet-100">
         <div>
-          <p className="text-xs text-violet-500 font-semibold uppercase tracking-wide mb-1">Overall Score</p>
+          <p className="text-xs text-violet-500 font-semibold uppercase tracking-wide mb-1">Overall fit</p>
           <ScoreGrade score={ev.score} />
         </div>
         {ev.archetype && (
@@ -367,6 +385,23 @@ export default function JobDetailPanel({
     if (mode === 'geo') setSaved(initialSaved);
   }, [initialJob?._id]);
 
+  useEffect(() => {
+    if (!initialJob?._id) return;
+    if (mode === 'results') logJobRankingEvent(initialJob._id, 'open_detail', { source: 'job_detail_panel' });
+    if (mode === 'linkedin') logLinkedInRankingEvent(initialJob._id, 'open_detail', { source: 'job_detail_panel' });
+  }, [initialJob?._id, mode]);
+
+  const emitEmailRankingClick = useCallback((payload) => {
+    if (mode === 'linkedin' && job?._id) {
+      logLinkedInRankingEvent(job._id, 'email_click', payload);
+      return;
+    }
+    const jobId = mode === 'geo' ? savedJobId : job._id;
+    if ((mode === 'results' || (mode === 'geo' && savedJobId)) && jobId) {
+      logJobRankingEvent(jobId, 'email_click', payload);
+    }
+  }, [mode, job?._id, savedJobId]);
+
   // Auto-fetch description for LinkedIn jobs that don't have one AND have a URL
   useEffect(() => {
     if (mode !== 'linkedin' || !initialJob?._id || initialJob?.description || !initialJob?.url) return;
@@ -520,8 +555,28 @@ export default function JobDetailPanel({
       else                      endpoint = `/jobs/${job._id}/status`;
 
       if (!endpoint) { toast.error('Save this job first to track status'); return; }
+      const prevStatus = job.status;
       await api.patch(endpoint, { status });
       updateJob({ status });
+      if (mode === 'linkedin' && job._id) {
+        if (status === 'applied') logLinkedInRankingEvent(job._id, 'apply', { source: 'status_tab' });
+        else if (status === 'saved') logLinkedInRankingEvent(job._id, 'save', { source: 'status_tab' });
+        else if (status === 'new' && prevStatus === 'saved') {
+          logLinkedInRankingEvent(job._id, 'unsave', { source: 'status_tab' });
+        } else if (status === 'ignored') logLinkedInRankingEvent(job._id, 'hide', { source: 'status_tab' });
+      } else if (mode === 'results' && job._id) {
+        if (status === 'applied') logJobRankingEvent(job._id, 'apply', { source: 'status_tab' });
+        else if (status === 'saved') logJobRankingEvent(job._id, 'save', { source: 'status_tab' });
+        else if (status === 'found' && prevStatus === 'saved') {
+          logJobRankingEvent(job._id, 'unsave', { source: 'status_tab' });
+        } else if (status === 'rejected') logJobRankingEvent(job._id, 'hide', { source: 'status_tab' });
+      } else if (mode === 'geo' && savedJobId) {
+        if (status === 'applied') logJobRankingEvent(savedJobId, 'apply', { source: 'status_tab' });
+        else if (status === 'saved') logJobRankingEvent(savedJobId, 'save', { source: 'status_tab' });
+        else if (status === 'found' && prevStatus === 'saved') {
+          logJobRankingEvent(savedJobId, 'unsave', { source: 'status_tab' });
+        } else if (status === 'rejected') logJobRankingEvent(savedJobId, 'hide', { source: 'status_tab' });
+      }
       toast.success(`Marked as ${status}`);
     } catch { toast.error('Failed to update'); }
   };
@@ -608,13 +663,35 @@ export default function JobDetailPanel({
   };
 
   // Outreach navigation
-  const goToOutreach = (emails = []) => {
-    const allEmails = emails.length > 0
+  const goToOutreach = (emails = [], rankingSection = null) => {
+    const allEmails = (emails.length > 0
       ? emails
       : [
           ...(job.allRecruiterContacts?.length > 0 ? job.allRecruiterContacts : job.recruiterEmail ? [{ email: job.recruiterEmail }] : []),
           ...(job.employees?.filter(e => e.email) || []),
-        ].map(c => c.email).filter(Boolean);
+        ].map(c => c.email).filter(Boolean));
+
+    if (rankingSection && job?._id) {
+      if (mode === 'linkedin') {
+        logLinkedInRankingEvent(job._id, 'email_click', {
+          action: 'outreach_nav',
+          section: rankingSection,
+          recipientCount: allEmails.length,
+        });
+      } else if (mode === 'results') {
+        logJobRankingEvent(job._id, 'email_click', {
+          action: 'outreach_nav',
+          section: rankingSection,
+          recipientCount: allEmails.length,
+        });
+      } else if (mode === 'geo' && savedJobId) {
+        logJobRankingEvent(savedJobId, 'email_click', {
+          action: 'outreach_nav',
+          section: rankingSection,
+          recipientCount: allEmails.length,
+        });
+      }
+    }
 
     const params = new URLSearchParams({
       company:  job.company  || '',
@@ -655,7 +732,6 @@ export default function JobDetailPanel({
 
   const statusList   = mode === 'linkedin' ? LINKEDIN_STATUSES   : RESULTS_STATUSES;
   const statusLabels = mode === 'linkedin' ? LINKEDIN_STATUS_LABELS : JOB_STATUS_LABELS;
-  const statusStyles = mode === 'linkedin' ? LINKEDIN_STATUS_STYLES : JOB_STATUS_STYLES;
 
   // geo mode status banner
   const geoStatusLocked = mode === 'geo' && !savedJobId;
@@ -702,7 +778,11 @@ export default function JobDetailPanel({
               <Star className="w-3 h-3" /> {job.matchScore}% match
             </span>
           )}
-          {job.remote && <span className="badge badge-green text-xs"><Wifi className="w-3 h-3" /> Remote</span>}
+          {job.remote && (
+            <Badge variant="green">
+              <Wifi className="h-3 w-3 shrink-0" aria-hidden /> Remote
+            </Badge>
+          )}
           <SourceBadge source={source} />
           {location && (
             <span className="text-xs text-gray-400 flex items-center gap-1">
@@ -818,8 +898,18 @@ export default function JobDetailPanel({
 
             {/* Apply + Liveness check */}
             <div className="flex gap-2">
-              <a href={applyUrl} target="_blank" rel="noopener noreferrer"
-                className="btn btn-primary flex-1 justify-center">
+              <a
+                href={applyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  if (!applyUrl || applyUrl === '#') return;
+                  if (mode === 'results' && job?._id) logJobRankingEvent(job._id, 'apply', { source: 'apply_cta' });
+                  if (mode === 'linkedin' && job?._id) logLinkedInRankingEvent(job._id, 'apply', { source: 'apply_cta' });
+                  if (mode === 'geo' && savedJobId) logJobRankingEvent(savedJobId, 'apply', { source: 'apply_cta' });
+                }}
+                className="btn btn-primary flex-1 justify-center"
+              >
                 <ArrowUpRight className="w-4 h-4" />
                 {mode === 'linkedin' ? 'View on LinkedIn' : 'Apply Now'}
               </a>
@@ -846,7 +936,7 @@ export default function JobDetailPanel({
 
             {/* Send Outreach button */}
             <button
-              onClick={() => goToOutreach()}
+              onClick={() => goToOutreach([], 'details')}
               className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
               style={{ background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)' }}
             >
@@ -874,6 +964,7 @@ export default function JobDetailPanel({
                 icon={Mail}
                 iconColor="text-blue-500"
                 items={hrEmails}
+                onRankingEmailClick={emitEmailRankingClick}
                 onOutreach={(contacts) => goToOutreach(contacts.map(c => c.email))}
               />
             ) : (
@@ -914,6 +1005,7 @@ export default function JobDetailPanel({
                 icon={Users}
                 iconColor="text-violet-500"
                 items={employees}
+                onRankingEmailClick={emitEmailRankingClick}
                 onOutreach={(contacts) => goToOutreach(contacts.filter(c => c.email).map(c => c.email))}
               />
             ) : (
@@ -958,7 +1050,7 @@ export default function JobDetailPanel({
               {/* Send outreach to all contacts */}
               {(job.recruiterEmail || hrEmails.length > 0) && (
                 <button
-                  onClick={() => goToOutreach()}
+                  onClick={() => goToOutreach([], 'contacts')}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
                   style={{ background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)' }}
                 >

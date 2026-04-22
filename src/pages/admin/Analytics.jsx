@@ -3,12 +3,14 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { api }     from '@utils/axios';
 import { fNumber } from '@utils/formatters';
 import { cn }      from '@utils/helpers';
+import { Badge, CardSurface } from '@components/ui';
 
 export default function AdminAnalytics() {
   const [userStats,    setUserStats]    = useState(null);
   const [searchStats,  setSearchStats]  = useState(null);
   const [platformStats,setPlatformStats]= useState([]);
   const [revenue,      setRevenue]      = useState(null);
+  const [rankingStats, setRankingStats] = useState(null);
   const [days,         setDays]         = useState(30);
   const [loading,      setLoading]      = useState(true);
 
@@ -19,11 +21,13 @@ export default function AdminAnalytics() {
       api.get(`/admin/analytics/searches?days=${days}`),
       api.get('/admin/analytics/platforms'),
       api.get('/admin/analytics/revenue'),
-    ]).then(([u, s, p, r]) => {
+      api.get(`/admin/analytics/ranking-events?days=${Math.min(days, 90)}`),
+    ]).then(([u, s, p, r, rk]) => {
       setUserStats(u.data.data);
       setSearchStats(s.data.data);
       setPlatformStats(p.data.data || []);
       setRevenue(r.data.data);
+      setRankingStats(rk.data.data || null);
     }).catch(() => {})
     .finally(() => setLoading(false));
   }, [days]);
@@ -57,27 +61,27 @@ export default function AdminAnalytics() {
       {/* Revenue */}
       {revenue && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="card card-body">
+          <CardSurface>
             <p className="text-sm text-gray-500">MRR</p>
             <p className="text-3xl font-bold text-gray-900 mt-1">₹{fNumber(revenue.mrr)}</p>
             <p className="text-xs text-gray-400 mt-0.5">Monthly Recurring Revenue</p>
-          </div>
-          <div className="card card-body">
+          </CardSurface>
+          <CardSurface>
             <p className="text-sm text-gray-500">Pro Users</p>
             <p className="text-3xl font-bold text-blue-600 mt-1">{revenue.proUsers}</p>
             <p className="text-xs text-gray-400 mt-0.5">₹{fNumber(revenue.breakdown?.pro || 0)}/mo</p>
-          </div>
-          <div className="card card-body">
+          </CardSurface>
+          <CardSurface>
             <p className="text-sm text-gray-500">Team Users</p>
             <p className="text-3xl font-bold text-purple-600 mt-1">{revenue.teamUsers}</p>
             <p className="text-xs text-gray-400 mt-0.5">₹{fNumber(revenue.breakdown?.team || 0)}/mo</p>
-          </div>
+          </CardSurface>
         </div>
       )}
 
       {/* Signups chart */}
       {userStats?.signups?.length > 0 && (
-        <div className="card card-body">
+        <CardSurface>
           <h2 className="font-semibold text-gray-900 mb-4">New Signups (last {days} days)</h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={userStats.signups}>
@@ -88,12 +92,12 @@ export default function AdminAnalytics() {
               <Bar dataKey="count" fill="#3b82f6" radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </CardSurface>
       )}
 
       {/* Searches chart */}
       {searchStats?.searches?.length > 0 && (
-        <div className="card card-body">
+        <CardSurface>
           <h2 className="font-semibold text-gray-900 mb-4">Searches (last {days} days)</h2>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={searchStats.searches}>
@@ -104,12 +108,12 @@ export default function AdminAnalytics() {
               <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-        </div>
+        </CardSurface>
       )}
 
       {/* Platform breakdown */}
       {platformStats.length > 0 && (
-        <div className="card card-body">
+        <CardSurface>
           <h2 className="font-semibold text-gray-900 mb-4">Jobs by Platform</h2>
           <div className="space-y-3">
             {platformStats.map(p => (
@@ -128,23 +132,88 @@ export default function AdminAnalytics() {
               </div>
             ))}
           </div>
-        </div>
+        </CardSurface>
       )}
 
       {/* Top roles */}
       {searchStats?.topRoles?.length > 0 && (
-        <div className="card card-body">
+        <CardSurface>
           <h2 className="font-semibold text-gray-900 mb-4">Most Searched Roles</h2>
           <div className="space-y-2">
             {searchStats.topRoles.map((r, i) => (
               <div key={r._id} className="flex items-center gap-3">
                 <span className="text-sm text-gray-400 w-6 text-right">{i+1}</span>
                 <span className="text-sm text-gray-700 flex-1">{r._id}</span>
-                <span className="badge badge-blue text-xs">{r.count} searches</span>
+                <Badge variant="blue" className="text-xs">
+                  {r.count} searches
+                </Badge>
               </div>
             ))}
           </div>
-        </div>
+        </CardSurface>
+      )}
+
+      {/* Ranking / UX signals (JobRankingEvent) */}
+      {rankingStats && (
+        <CardSurface className="space-y-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-gray-900">Ranking &amp; UX events</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Last {rankingStats.days} days · {fNumber(rankingStats.total || 0)} events ·{' '}
+                {fNumber(rankingStats.uniqueUsers || 0)} distinct users
+              </p>
+            </div>
+          </div>
+
+          {Object.keys(rankingStats.byListingSurface || {}).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">By listing surface</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(rankingStats.byListingSurface).map(([k, v]) => (
+                  <span key={k} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-semibold border border-slate-200">
+                    {k.replace(/_/g, ' ')}
+                    <span className="text-slate-500 font-bold">{fNumber(v)}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Object.keys(rankingStats.byEventType || {}).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">By event type</p>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  data={Object.entries(rankingStats.byEventType).map(([type, count]) => ({ type, count }))}
+                  layout="vertical"
+                  margin={{ left: 8, right: 16 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="type" width={100} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#7c3aed" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {rankingStats.byDay?.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Events per day</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={rankingStats.byDay}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke="#2563eb" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardSurface>
       )}
     </div>
   );

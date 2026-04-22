@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Briefcase, Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
 import { api } from '@utils/axios';
 import { useToast } from '@hooks/useToast';
+import { CardSurface } from '@components/ui';
 
 const schema = z.object({
   email: z.string().email('Valid email required'),
@@ -35,7 +36,7 @@ export default function ForgotPassword() {
   if (sent) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="card card-body shadow-xl max-w-md w-full text-center">
+        <CardSurface className="max-w-md w-full text-center shadow-xl">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4 mx-auto">
             <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
@@ -46,7 +47,7 @@ export default function ForgotPassword() {
           <Link to="/login" className="btn btn-primary w-full mt-6">
             Back to Login
           </Link>
-        </div>
+        </CardSurface>
       </div>
     );
   }
@@ -62,7 +63,7 @@ export default function ForgotPassword() {
           <p className="text-gray-500 mt-1 text-sm">Enter your email to receive a reset link</p>
         </div>
 
-        <div className="card card-body shadow-xl">
+        <CardSurface className="shadow-xl">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
               <label className="label">Email address</label>
@@ -84,7 +85,7 @@ export default function ForgotPassword() {
           <Link to="/login" className="flex items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-700 mt-4">
             <ArrowLeft className="w-4 h-4" /> Back to login
           </Link>
-        </div>
+        </CardSurface>
       </div>
     </div>
   );

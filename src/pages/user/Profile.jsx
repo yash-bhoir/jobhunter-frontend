@@ -13,6 +13,7 @@ import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { api }      from '@utils/axios';
 import { cn }       from '@utils/helpers';
+import { Badge }    from '@components/ui';
 import { getMissingFields } from '@utils/profileComplete';
 
 const schema = z.object({
@@ -391,14 +392,16 @@ export default function Profile() {
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Quick add</p>
                     <div className="flex flex-wrap gap-1.5">
                       {QUICK_SKILLS.filter(s => !skills.includes(s)).map(s => (
-                        <button
+                        <Badge
                           key={s}
+                          as="button"
                           type="button"
+                          variant="gray"
                           onClick={() => setSkills(p => [...p, s])}
-                          className="badge badge-gray cursor-pointer hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 border border-transparent transition-all"
+                          className="cursor-pointer border border-transparent transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                         >
                           + {s}
-                        </button>
+                        </Badge>
                       ))}
                     </div>
                   </div>
@@ -435,7 +438,9 @@ export default function Profile() {
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {user.resume.extractedSkills.slice(0, 12).map(s => (
-                              <span key={s} className="badge badge-green text-xs">{s}</span>
+                              <Badge key={s} variant="green" className="text-xs">
+                                {s}
+                              </Badge>
                             ))}
                           </div>
                         </div>
@@ -582,7 +587,9 @@ function GmailConnect() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-bold text-emerald-900 truncate">{status.email}</p>
-                    <span className="badge badge-green text-xs flex-shrink-0">Connected</span>
+                    <Badge variant="green" className="shrink-0 text-xs">
+                      Connected
+                    </Badge>
                   </div>
                   <p className="text-xs text-emerald-600 mt-0.5">
                     {status.connectedAt ? `Since ${new Date(status.connectedAt).toLocaleDateString()}` : 'Active'}
@@ -765,7 +772,11 @@ function SMTPSetup() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-gray-900 truncate">{acc.email}</p>
-                      {acc.isDefault && <span className="badge badge-green text-xs flex-shrink-0">Default</span>}
+                      {acc.isDefault && (
+                        <Badge variant="green" className="shrink-0 text-xs">
+                          Default
+                        </Badge>
+                      )}
                     </div>
                     {acc.label && <p className="text-xs text-gray-400">{acc.label}</p>}
                   </div>

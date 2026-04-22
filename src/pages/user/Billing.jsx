@@ -5,6 +5,7 @@ import { useToast }   from '@hooks/useToast';
 import { useCredits } from '@hooks/useCredits';
 import { api }        from '@utils/axios';
 import { cn }         from '@utils/helpers';
+import { Badge, Card, CardBody, CardHeader, CardSurface } from '@components/ui';
 import { fDate }      from '@utils/formatters';
 
 const PLANS = [
@@ -255,28 +256,30 @@ export default function Billing() {
           const isUpgrade = planIdx > curIdx;
 
           return (
-            <div
+            <Card
               key={plan.id}
               className={cn(
-                'card relative',
+                'relative',
                 plan.popular ? 'border-2 border-blue-500 shadow-lg shadow-blue-100' : '',
-                isCurrent    ? 'ring-2 ring-green-400' : ''
+                isCurrent ? 'ring-2 ring-green-400' : '',
               )}
             >
               {plan.popular && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="badge badge-blue px-3 py-1 text-xs font-semibold flex items-center gap-1">
-                    <Star className="w-3 h-3" /> Most Popular
-                  </span>
+                  <Badge variant="blue" className="gap-1 px-3 py-1 text-xs font-semibold">
+                    <Star className="h-3 w-3 shrink-0" aria-hidden /> Most Popular
+                  </Badge>
                 </div>
               )}
               {isCurrent && (
                 <div className="absolute -top-3.5 right-4">
-                  <span className="badge badge-green px-3 py-1 text-xs font-semibold">Current Plan</span>
+                  <Badge variant="green" className="px-3 py-1 text-xs font-semibold">
+                    Current Plan
+                  </Badge>
                 </div>
               )}
 
-              <div className="card-body">
+              <CardBody>
                 {/* Header */}
                 <div className="flex items-center gap-2 mb-4">
                   <div className={cn(
@@ -338,17 +341,17 @@ export default function Billing() {
                    isUpgrade    ? `Upgrade to ${plan.name}` :
                                   `Switch to ${plan.name}`}
                 </button>
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           );
         })}
       </div>
 
       {/* Payment history */}
-      <div className="card">
-        <div className="card-header">
+      <Card>
+        <CardHeader>
           <h2 className="font-semibold text-gray-900">Payment History</h2>
-        </div>
+        </CardHeader>
         <div className="divide-y divide-gray-100">
           {histLoading ? (
             [...Array(3)].map((_, i) => (
@@ -371,18 +374,18 @@ export default function Billing() {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-gray-900">₹{item.amount}</p>
-                  <span className={cn('badge text-xs', item.status === 'active' ? 'badge-green' : 'badge-gray')}>
+                  <Badge variant={item.status === 'active' ? 'green' : 'gray'} className="mt-1 capitalize">
                     {item.status}
-                  </span>
+                  </Badge>
                 </div>
               </div>
             ))
           )}
         </div>
-      </div>
+      </Card>
 
       {/* FAQ */}
-      <div className="card card-body space-y-4">
+      <CardSurface className="space-y-4">
         <h2 className="font-semibold text-gray-900">Frequently Asked Questions</h2>
         {[
           { q: 'Can I cancel anytime?',                       a: 'Yes. Cancel from this page and you keep access until the end of your billing period.' },
@@ -396,7 +399,7 @@ export default function Billing() {
             <p className="text-sm text-gray-500 mt-1">{a}</p>
           </div>
         ))}
-      </div>
+      </CardSurface>
     </div>
   );
 }

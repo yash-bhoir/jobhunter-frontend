@@ -3,6 +3,7 @@ import { Save, Loader2 } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useToast } from '@hooks/useToast';
 import { cn }       from '@utils/helpers';
+import { Card, CardHeader, CardSurface } from '@components/ui';
 
 const FEATURES = [
   { key: 'aiEmailEnabled',       label: 'AI Email Generation',      desc: 'GPT-4 writes personalized emails' },
@@ -58,7 +59,7 @@ export default function AdminFeatures() {
       <p className="text-gray-500 text-sm">Toggle features instantly without redeploying</p>
 
       {/* Maintenance mode */}
-      <div className={cn('card card-body border-2', maintenance ? 'border-red-400 bg-red-50' : 'border-gray-200')}>
+      <CardSurface className={cn('border-2', maintenance ? 'border-red-400 bg-red-50' : 'border-gray-200')}>
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">Maintenance Mode</h3>
@@ -77,13 +78,13 @@ export default function AdminFeatures() {
             )} />
           </button>
         </div>
-      </div>
+      </CardSurface>
 
       {/* Feature toggles */}
-      <div className="card overflow-hidden">
-        <div className="card-header">
+      <Card className="overflow-hidden">
+        <CardHeader>
           <h2 className="font-semibold text-gray-900">Platform Features</h2>
-        </div>
+        </CardHeader>
         <div className="divide-y divide-gray-100">
           {FEATURES.map(f => (
             <div key={f.key} className="p-4 flex items-center justify-between">
@@ -106,7 +107,7 @@ export default function AdminFeatures() {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       <button onClick={save} disabled={saving} className="btn btn-primary">
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

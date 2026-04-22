@@ -3,6 +3,7 @@ import { Shield, Download } from 'lucide-react';
 import { api }     from '@utils/axios';
 import { fDateTime } from '@utils/formatters';
 import { cn }      from '@utils/helpers';
+import { Card, CardHeader } from '@components/ui';
 
 export default function AdminAuditLog() {
   const [logs,    setLogs]    = useState([]);
@@ -23,11 +24,11 @@ export default function AdminAuditLog() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="card-header flex items-center gap-2">
-          <Shield className="w-4 h-4 text-blue-600" />
+      <Card className="overflow-hidden">
+        <CardHeader className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-blue-600" aria-hidden />
           <h2 className="font-semibold text-gray-900">Admin Actions</h2>
-        </div>
+        </CardHeader>
         <div className="divide-y divide-gray-100">
           {loading ? (
             [...Array(8)].map((_,i) => (
@@ -59,7 +60,7 @@ export default function AdminAuditLog() {
             ))
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

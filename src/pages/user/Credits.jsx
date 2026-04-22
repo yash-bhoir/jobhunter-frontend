@@ -6,6 +6,7 @@ import { useAuth }    from '@hooks/useAuth';
 import { useToast }   from '@hooks/useToast';
 import { api }        from '@utils/axios';
 import { cn }         from '@utils/helpers';
+import { Badge, Card, CardHeader, CardSurface } from '@components/ui';
 import { fDateTime }  from '@utils/formatters';
 
 // Maps action key → display label + breakdown DB field (costs fetched live from API)
@@ -158,10 +159,12 @@ export default function Credits() {
       </div>
 
       {/* Balance card */}
-      <div className="card card-body">
-        <div className="flex items-center justify-between mb-4">
+      <CardSurface>
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">This Month's Balance</h2>
-          <span className="badge badge-blue capitalize">{credits?.plan || 'free'} plan</span>
+          <Badge variant="blue" className="capitalize">
+            {credits?.plan || 'free'} plan
+          </Badge>
         </div>
 
         <div className="flex items-end gap-2 mb-3">
@@ -212,11 +215,11 @@ export default function Credits() {
             Includes {credits.topupCredits} top-up credits (never expire)
           </p>
         )}
-      </div>
+      </CardSurface>
 
       {/* Usage breakdown */}
-      <div className="card card-body">
-        <h2 className="font-semibold text-gray-900 mb-4">Usage Breakdown</h2>
+      <CardSurface>
+        <h2 className="mb-4 font-semibold text-gray-900">Usage Breakdown</h2>
         <div className="space-y-3">
           {Object.entries(BREAKDOWN_MAP).map(([key, { label, field, cost }]) => {
             const used = credits?.breakdown?.[field] || 0;
@@ -235,20 +238,22 @@ export default function Credits() {
             );
           })}
         </div>
-      </div>
+      </CardSurface>
 
       {/* Top-up packs */}
       <div>
         <h2 className="font-semibold text-gray-900 mb-3">Buy More Credits</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {topupPacks.map(pack => (
-            <div
+            <CardSurface
               key={pack.name}
-              className={cn('card card-body relative', pack.popular ? 'border-2 border-blue-500' : '')}
+              className={cn('relative', pack.popular ? 'border-2 border-blue-500' : '')}
             >
               {pack.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="badge badge-blue text-xs px-3">Most Popular</span>
+                  <Badge variant="blue" className="px-3 text-xs">
+                    Most Popular
+                  </Badge>
                 </div>
               )}
               <h3 className="font-semibold text-gray-900">{pack.name}</h3>
@@ -267,7 +272,7 @@ export default function Credits() {
                   : <ShoppingCart className="w-4 h-4" />}
                 {buying === pack.name ? 'Processing…' : 'Buy Now'}
               </button>
-            </div>
+            </CardSurface>
           ))}
         </div>
         <p className="text-xs text-gray-400 mt-2 text-center">
@@ -277,8 +282,8 @@ export default function Credits() {
 
       {/* Upgrade banner — only for free users */}
       {!isPro && (
-        <div className="card card-body bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-          <div className="flex items-center justify-between flex-wrap gap-4">
+        <CardSurface className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="font-bold text-lg flex items-center gap-2">
                 <Zap className="w-5 h-5" /> Upgrade to Pro
@@ -294,14 +299,14 @@ export default function Credits() {
               </Link>
             </div>
           </div>
-        </div>
+        </CardSurface>
       )}
 
       {/* Activity log */}
-      <div className="card">
-        <div className="card-header">
+      <Card>
+        <CardHeader>
           <h2 className="font-semibold text-gray-900">Recent Activity</h2>
-        </div>
+        </CardHeader>
         <div className="divide-y divide-gray-100">
           {actLoading ? (
             [...Array(5)].map((_, i) => (
@@ -337,7 +342,7 @@ export default function Credits() {
             ))
           )}
         </div>
-      </div>
+      </Card>
 
     </div>
   );

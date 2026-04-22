@@ -19,6 +19,16 @@ export const JOB_STATUS_STYLES = {
   rejected:  'badge-red',
 };
 
+/** Use with `<Badge variant={JOB_STATUS_BADGE_VARIANT[status]} />` */
+export const JOB_STATUS_BADGE_VARIANT = {
+  found:     'gray',
+  saved:     'blue',
+  applied:   'amber',
+  interview: 'purple',
+  offer:     'green',
+  rejected:  'red',
+};
+
 export const JOB_STATUS_LABELS = {
   found:     'Found',
   saved:     'Saved',
@@ -26,6 +36,21 @@ export const JOB_STATUS_LABELS = {
   interview: 'Interview',
   offer:     'Offer',
   rejected:  'Rejected',
+};
+
+/** Admin Users / billing UI — `<Badge variant={ACCOUNT_PLAN_BADGE_VARIANT[plan]} />` */
+export const ACCOUNT_PLAN_BADGE_VARIANT = {
+  free: 'gray',
+  pro:  'blue',
+  team: 'purple',
+};
+
+/** Admin user row status */
+export const ACCOUNT_STATUS_BADGE_VARIANT = {
+  active:  'green',
+  pending: 'amber',
+  banned:  'red',
+  deleted: 'gray',
 };
 
 export const PLATFORMS = [

@@ -1,4 +1,8 @@
-export const cn = (...classes) => classes.filter(Boolean).join(' ');
+import clsx from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+/** Merge class names; tailwind-merge resolves conflicting utilities last-wins. */
+export const cn = (...inputs) => twMerge(clsx(inputs));
 
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 

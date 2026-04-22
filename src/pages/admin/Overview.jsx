@@ -6,6 +6,7 @@ import {
 import { api }       from '@utils/axios';
 import { fNumber }   from '@utils/formatters';
 import { cn }        from '@utils/helpers';
+import { Badge, Card, CardHeader, CardSurface } from '@components/ui';
 
 export default function AdminOverview() {
   const [stats,   setStats]   = useState(null);
@@ -59,7 +60,7 @@ export default function AdminOverview() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(({ label, value, sub, icon: Icon, color }) => (
-          <div key={label} className="card card-body">
+          <CardSurface key={label}>
             <div className="flex items-center justify-between mb-3">
               <div className={cn(
                 'w-10 h-10 rounded-xl flex items-center justify-center',
@@ -78,17 +79,17 @@ export default function AdminOverview() {
             <div className="text-2xl font-bold text-gray-900">{value}</div>
             <div className="text-sm text-gray-500 mt-0.5">{label}</div>
             <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
-          </div>
+          </CardSurface>
         ))}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
 
         {/* API Keys Status */}
-        <div className="card">
-          <div className="card-header">
+        <Card>
+          <CardHeader>
             <h2 className="font-semibold text-gray-900">API Keys Status</h2>
-          </div>
+          </CardHeader>
           <div className="divide-y divide-gray-100">
             {apiKeys.map(key => (
               <div key={key.key} className="p-3 flex items-center gap-3">
@@ -100,22 +101,19 @@ export default function AdminOverview() {
                   <p className="text-sm font-medium text-gray-900">{key.label}</p>
                   <p className="text-xs text-gray-400">{key.category}</p>
                 </div>
-                <span className={cn(
-                  'badge text-xs',
-                  key.configured ? 'badge-green' : 'badge-red'
-                )}>
+                <Badge variant={key.configured ? 'green' : 'red'} className="text-xs">
                   {key.configured ? 'Active' : 'Missing'}
-                </span>
+                </Badge>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Recent Activity */}
-        <div className="card">
-          <div className="card-header">
+        <Card>
+          <CardHeader>
             <h2 className="font-semibold text-gray-900">Live Activity</h2>
-          </div>
+          </CardHeader>
           <div className="divide-y divide-gray-100">
             {logs.length === 0 ? (
               <div className="p-6 text-center text-gray-400 text-sm">No activity</div>
@@ -140,11 +138,11 @@ export default function AdminOverview() {
               ))
             )}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* User breakdown */}
-      <div className="card card-body">
+      <CardSurface>
         <h2 className="font-semibold text-gray-900 mb-4">User Plan Breakdown</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
@@ -174,7 +172,7 @@ export default function AdminOverview() {
             );
           })}
         </div>
-      </div>
+      </CardSurface>
     </div>
   );
 }

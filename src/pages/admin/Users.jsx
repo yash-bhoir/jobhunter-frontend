@@ -8,19 +8,8 @@ import { api }       from '@utils/axios';
 import { useToast }  from '@hooks/useToast';
 import { fDate, initials } from '@utils/formatters';
 import { cn }        from '@utils/helpers';
-
-const PLAN_STYLES = {
-  free:  'badge-gray',
-  pro:   'badge-blue',
-  team:  'badge-purple',
-};
-
-const STATUS_STYLES = {
-  active:  'badge-green',
-  pending: 'badge-amber',
-  banned:  'badge-red',
-  deleted: 'badge-gray',
-};
+import { ACCOUNT_PLAN_BADGE_VARIANT, ACCOUNT_STATUS_BADGE_VARIANT } from '@utils/constants';
+import { Badge, Card, CardSurface } from '@components/ui';
 
 export default function AdminUsers() {
   const toast = useToast();
@@ -113,7 +102,7 @@ export default function AdminUsers() {
       </div>
 
       {/* Filters */}
-      <div className="card card-body py-3">
+      <CardSurface className="py-3">
         <div className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -137,12 +126,12 @@ export default function AdminUsers() {
             <option value="banned">Banned</option>
           </select>
         </div>
-      </div>
+      </CardSurface>
 
       <div className="flex gap-4">
 
         {/* Users table */}
-        <div className="flex-1 card overflow-hidden">
+        <Card className="flex-1 overflow-hidden">
           <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[540px]">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -188,14 +177,14 @@ export default function AdminUsers() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn('badge text-xs', PLAN_STYLES[user.plan] || 'badge-gray')}>
+                    <Badge variant={ACCOUNT_PLAN_BADGE_VARIANT[user.plan] || 'gray'} className="text-xs capitalize">
                       {user.plan}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn('badge text-xs', STATUS_STYLES[user.status] || 'badge-gray')}>
+                    <Badge variant={ACCOUNT_STATUS_BADGE_VARIANT[user.status] || 'gray'} className="text-xs capitalize">
                       {user.status}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{fDate(user.createdAt)}</td>
                   <td className="px-4 py-3">
@@ -240,11 +229,11 @@ export default function AdminUsers() {
               </div>
             </div>
           )}
-        </div>
+        </Card>
 
         {/* User detail panel */}
         {selected && (
-          <div className="w-72 flex-shrink-0 card card-body space-y-4 h-fit sticky top-0">
+          <CardSurface className="sticky top-0 h-fit w-72 flex-shrink-0 space-y-4">
             <div className="text-center">
               <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white text-xl font-bold mx-auto mb-2">
                 {initials(`${selected.profile?.firstName || ''} ${selected.profile?.lastName || ''}`) || selected.email[0].toUpperCase()}
@@ -253,10 +242,16 @@ export default function AdminUsers() {
                 {selected.profile?.firstName} {selected.profile?.lastName}
               </p>
               <p className="text-sm text-gray-500">{selected.email}</p>
-              <div className="flex gap-2 justify-center mt-2">
-                <span className={cn('badge text-xs', PLAN_STYLES[selected.plan])}>{selected.plan}</span>
-                <span className={cn('badge text-xs', STATUS_STYLES[selected.status])}>{selected.status}</span>
-                <span className="badge badge-gray text-xs">{selected.role}</span>
+              <div className="mt-2 flex justify-center gap-2">
+                <Badge variant={ACCOUNT_PLAN_BADGE_VARIANT[selected.plan] || 'gray'} className="text-xs capitalize">
+                  {selected.plan}
+                </Badge>
+                <Badge variant={ACCOUNT_STATUS_BADGE_VARIANT[selected.status] || 'gray'} className="text-xs capitalize">
+                  {selected.status}
+                </Badge>
+                <Badge variant="gray" className="text-xs capitalize">
+                  {selected.role}
+                </Badge>
               </div>
             </div>
 
@@ -319,7 +314,7 @@ export default function AdminUsers() {
                 <Trash2 className="w-4 h-4" /> Delete Account
               </button>
             </div>
-          </div>
+          </CardSurface>
         )}
       </div>
     </div>

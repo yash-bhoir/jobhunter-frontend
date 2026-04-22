@@ -11,6 +11,7 @@ import { useCredits } from '@hooks/useCredits';
 import { api }        from '@utils/axios';
 import { fAgo }       from '@utils/formatters';
 import { cn }         from '@utils/helpers';
+import { Badge }      from '@components/ui';
 
 function getTimeOfDay() {
   const h = new Date().getHours();
@@ -123,9 +124,12 @@ export default function Dashboard() {
               <p className="text-2xl font-black" style={{ color: creditColor === '#10b981' ? '#6ee7b7' : creditColor === '#f59e0b' ? '#fde68a' : '#fca5a5' }}>{remaining}</p>
               <p className="text-xs text-blue-200 font-medium">credits left</p>
             </div>
-            <span className={cn('badge capitalize text-xs font-bold', user?.plan === 'pro' ? 'badge-blue' : user?.plan === 'team' ? 'badge-purple' : 'badge-gray')}>
+            <Badge
+              variant={user?.plan === 'pro' ? 'blue' : user?.plan === 'team' ? 'purple' : 'gray'}
+              className="font-bold capitalize"
+            >
               {user?.plan || 'free'} plan
-            </span>
+            </Badge>
           </div>
         </div>
       </motion.div>

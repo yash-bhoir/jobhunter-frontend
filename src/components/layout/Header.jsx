@@ -7,6 +7,7 @@ import { useTheme }   from '@context/ThemeContext';
 import { useToast }   from '@hooks/useToast';
 import { useNavigate } from 'react-router-dom';
 import { cn }         from '@utils/helpers';
+import { Badge }      from '@components/ui';
 
 const PAGE_TITLES = {
   '/dashboard':      'Dashboard',
@@ -36,10 +37,10 @@ export default function Header({ onMenuClick }) {
   const creditColor = usagePct >= 80 ? 'text-red-500' : usagePct >= 50 ? 'text-amber-500' : 'text-emerald-500';
   const barColor    = usagePct >= 80 ? 'bg-red-500'   : usagePct >= 50 ? 'bg-amber-500'   : 'bg-emerald-500';
 
-  const planColors = {
-    pro:  'badge-blue',
-    team: 'badge-purple',
-    free: 'badge-gray',
+  const planVariant = {
+    pro:  'blue',
+    team: 'purple',
+    free: 'gray',
   };
 
   const initials = [user?.profile?.firstName?.[0], user?.profile?.lastName?.[0]]
@@ -88,9 +89,12 @@ export default function Header({ onMenuClick }) {
         </Link>
 
         {/* Plan badge */}
-        <span className={cn('hidden md:inline-flex badge capitalize', planColors[user?.plan] || 'badge-gray')}>
+        <Badge
+          variant={planVariant[user?.plan] || 'gray'}
+          className="hidden capitalize md:inline-flex"
+        >
           {user?.plan || 'free'}
-        </span>
+        </Badge>
 
         {/* Dark mode */}
         <button

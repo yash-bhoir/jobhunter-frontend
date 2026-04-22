@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Loader2, Zap } from 'lucide-react';
 import { api }      from '@utils/axios';
 import { useToast } from '@hooks/useToast';
+import { Card, CardHeader, CardSurface } from '@components/ui';
 
 const DEFAULT_COSTS = {
   JOB_SEARCH:          10,
@@ -106,7 +107,7 @@ export default function AdminPlans() {
       </div>
 
       {/* Plan pricing */}
-      <div className="card card-body space-y-4">
+      <CardSurface className="space-y-4">
         <h2 className="font-semibold text-gray-900">Plan Pricing (₹)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
@@ -130,14 +131,14 @@ export default function AdminPlans() {
           ))}
         </div>
         <p className="text-xs text-gray-400">Annual prices shown to users as one-time charge. Approx 20–33% saving vs monthly.</p>
-      </div>
+      </CardSurface>
 
       {/* Credit costs */}
-      <div className="card overflow-hidden">
-        <div className="card-header flex items-center gap-2">
-          <Zap className="w-4 h-4 text-blue-600" />
+      <Card className="overflow-hidden">
+        <CardHeader className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-blue-600" aria-hidden />
           <h2 className="font-semibold text-gray-900">Credit Costs per Action</h2>
-        </div>
+        </CardHeader>
         <div className="divide-y divide-gray-100">
           {Object.entries(credits).map(([key, cost]) => (
             <div key={key} className="flex items-center gap-4 p-4">
@@ -159,10 +160,10 @@ export default function AdminPlans() {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       {/* Monthly credits per plan */}
-      <div className="card card-body space-y-4">
+      <CardSurface className="space-y-4">
         <h2 className="font-semibold text-gray-900">Monthly Credits per Plan</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
@@ -181,7 +182,7 @@ export default function AdminPlans() {
             </div>
           ))}
         </div>
-      </div>
+      </CardSurface>
 
       <button onClick={save} disabled={saving} className="btn btn-primary btn-lg">
         {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Save className="w-4 h-4" /> Save All Changes</>}
