@@ -39,6 +39,7 @@ import AdminAlerts    from '@pages/admin/Alerts';
 import AdminComms     from '@pages/admin/Comms';
 import AdminAuditLog  from '@pages/admin/AuditLog';
 import AdminErrorLogs from '@pages/admin/ErrorLogs';
+import AdminResumeTemplates from '@pages/admin/ResumeTemplates';
 
 // Error pages
 import NotFound      from '@pages/errors/NotFound';
@@ -96,6 +97,7 @@ export default function AppRouter() {
         <Route path="/admin/comms"     element={<AdminComms />} />
         <Route path="/admin/audit"       element={<AdminAuditLog />} />
         <Route path="/admin/error-logs"  element={<AdminErrorLogs />} />
+        <Route path="/admin/resume-templates" element={<AdminResumeTemplates />} />
       </Route>
 
       <Route path="/"  element={<Navigate to="/dashboard" replace />} />

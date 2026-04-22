@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Mail, Send, Loader2, Sparkles, CheckCircle,
@@ -11,6 +11,8 @@ import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { cn }       from '@utils/helpers';
 import { Badge, Card, CardSurface } from '@components/ui';
+
+const draftKey = (company, email) => `${company}|||${(email || '').toLowerCase()}`;
 
 export default function OutreachManager() {
   const { user }       = useAuth();
@@ -31,7 +33,12 @@ export default function OutreachManager() {
   const [smtpStatus,    setSmtpStatus]    = useState(null);
   const [selected,      setSelected]      = useState([]);   // selected company names
   const [selectedEmails, setSelectedEmails] = useState({}); // company -> string[] of selected email addresses
-  const [previews,      setPreviews]      = useState({});   // company -> {subject, body}
+  /** Per-recipient drafts: key = draftKey(company, email) -> { subject, body, emailId } */
+  const [emailDrafts,   setEmailDrafts]   = useState({});
+  const [activeEditorEmail, setActiveEditorEmail] = useState({}); // company -> email (which tab is being edited)
+  const [resumesList,   setResumesList]   = useState([]);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
+  const draftSaveTimer  = useRef({});
   const [generating,    setGenerating]    = useState({});   // company -> bool
   const [sending,       setSending]       = useState({});   // company -> bool
   const [sent,          setSent]          = useState({});   // company -> bool
@@ -44,14 +51,52 @@ export default function OutreachManager() {
   const [optimizing,      setOptimizing]      = useState({}); // company -> bool
   const [hasResume,       setHasResume]        = useState(false);
   const [showComparison,  setShowComparison]  = useState({}); // company -> bool
-  const [resumePasteText, setResumePasteText] = useState({}); // company -> pasted resume text
-  const [showPasteBox,    setShowPasteBox]    = useState({}); // company -> bool
   const [jdPasteText,     setJdPasteText]     = useState({}); // company -> full JD pasted by user
   const [showJdPaste,     setShowJdPaste]     = useState({}); // company -> bool
   const [enhancing,       setEnhancing]       = useState({}); // company -> bool
   const [composeMode,     setComposeMode]     = useState({}); // company -> 'generated' | 'manual'
 
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
+
+  const pickEditorEmail = useCallback((company) => {
+    const sel = selectedEmails[company] || [];
+    const active = activeEditorEmail[company];
+    if (active && sel.includes(active)) return active;
+    return sel[0] || '';
+  }, [selectedEmails, activeEditorEmail]);
+
+  const currentDraft = useCallback((company) => {
+    const email = pickEditorEmail(company);
+    if (!email) return null;
+    return emailDrafts[draftKey(company, email)] || null;
+  }, [emailDrafts, pickEditorEmail]);
+
+  const allSelectedHaveDrafts = useCallback((company) => {
+    const emails = selectedEmails[company] || [];
+    return emails.length > 0 && emails.every((e) => {
+      const d = emailDrafts[draftKey(company, e)];
+      return d && String(d.subject || '').trim() && String(d.body || '').trim();
+    });
+  }, [emailDrafts, selectedEmails]);
+
+  const companyHasAnyDraft = useCallback((company) => {
+    const emails = selectedEmails[company] || [];
+    return emails.some((e) => {
+      const d = emailDrafts[draftKey(company, e)];
+      return d && String(d.body || '').trim();
+    });
+  }, [emailDrafts, selectedEmails]);
+
+  const scheduleDraftSave = (emailId, subject, body, resumeId) => {
+    if (!emailId) return;
+    const t = draftSaveTimer.current[emailId];
+    if (t) clearTimeout(t);
+    draftSaveTimer.current[emailId] = setTimeout(async () => {
+      try {
+        await api.patch(`/outreach/drafts/${emailId}`, { subject, body, resumeId: resumeId || undefined });
+      } catch { /* non-blocking */ }
+    }, 1200);
+  };
 
   // If searchId is missing or not a valid ObjectId, resolve to the latest search
   const isValidObjectId = (id) => /^[a-f\d]{24}$/i.test(id || '');
@@ -135,7 +180,12 @@ export default function OutreachManager() {
       const patchedData = { ...contactsRes.data.data, companies };
       setData(patchedData);
 
-      const hasRes = !!profileRes.data.data?.resume?.url;
+      const pr = profileRes.data.data || {};
+      const list = pr.resumes || [];
+      setResumesList(list);
+      const def = list.find((r) => r.isDefault) || list[0];
+      if (def?.id) setSelectedResumeId(String(def.id));
+      const hasRes = !!(pr.resume?.url || list.length);
       setHasResume(hasRes);
       if (hasRes) setAttachResume(true);
 
@@ -180,26 +230,59 @@ export default function OutreachManager() {
     }
   };
 
-  const generateEmail = async (company) => {
+  const generateEmail = async (company, opts = {}) => {
+    const { onlyEmail, skipCache } = opts;
     const companyData = data.companies.find(c => c.company === company);
     if (!companyData) return;
 
     const job = companyData.jobs[0];
-    setGenerating(p => ({ ...p, [company]: true }));
-
-    // Use pasted JD if available, otherwise fall back to stored job description
     const jd = jdPasteText[company]?.trim() || job.description || '';
+    const allContacts = companyData.allRecruiterContacts?.length > 0
+      ? companyData.allRecruiterContacts
+      : companyData.recruiterEmail
+        ? [{ email: companyData.recruiterEmail, name: companyData.recruiterName }]
+        : [];
+    const sel = selectedEmails[company] || [];
+    const targets = (onlyEmail
+      ? allContacts.filter(c => c.email === onlyEmail)
+      : allContacts.filter(c => c.email && sel.includes(c.email))
+    );
 
+    if (!targets.length) {
+      toast.error('Select at least one recipient email');
+      return;
+    }
+
+    setGenerating(p => ({ ...p, [company]: true }));
     try {
-      const { data: res } = await api.post('/outreach/generate', {
-        company,
-        jobTitle:        job.title,
-        recruiterName:   companyData.recruiterName,
-        jobUrl:          job.url,
-        jobDescription:  jd,
-        jobId:           job._id || undefined,
-      });
-      setPreviews(p => ({ ...p, [company]: { subject: res.data.subject, body: res.data.body, emailId: res.data.emailId } }));
+      let v = 0;
+      for (const t of targets) {
+        const { data: res } = await api.post('/outreach/generate', {
+          company,
+          jobTitle:         job.title,
+          recruiterName:    companyData.recruiterName,
+          jobUrl:           job.url,
+          jobDescription:   jd,
+          jobId:            job._id || undefined,
+          recipientEmail:   t.email,
+          recipientName:    t.name || undefined,
+          skipCache:        !!skipCache,
+          variationIndex:   v,
+        });
+        const key = draftKey(company, t.email);
+        const payload = res.data?.data ?? res.data;
+        setEmailDrafts(p => ({
+          ...p,
+          [key]: {
+            subject: payload.subject,
+            body:    payload.body,
+            emailId: payload.emailId,
+          },
+        }));
+        v += 1;
+      }
+      const first = targets[0]?.email;
+      if (first) setActiveEditorEmail(a => ({ ...a, [company]: first }));
       setComposeMode(p => ({ ...p, [company]: 'generated' }));
       setExpandedPrev(p => ({ ...p, [company]: true }));
     } catch (err) {
@@ -212,27 +295,36 @@ export default function OutreachManager() {
   const generateAll = async () => {
     const companies = data.companies.filter(c => c.recruiterEmail && selected.includes(c.company));
     for (const c of companies) {
-      if (!previews[c.company]) await generateEmail(c.company);
+      if (!allSelectedHaveDrafts(c.company)) await generateEmail(c.company);
     }
   };
 
-  // ── Start manual compose (blank email) ───────────────────────────
   const startManualWrite = (company) => {
-    const companyData = data.companies.find(c => c.company === company);
+    const companyData = data.companies.find(co => co.company === company);
     const job = companyData?.jobs[0];
-    setPreviews(p => ({
+    const email = pickEditorEmail(company) || (selectedEmails[company] || [])[0];
+    if (!email) {
+      toast.error('Select a recipient email first');
+      return;
+    }
+    const key = draftKey(company, email);
+    setEmailDrafts(p => ({
       ...p,
-      [company]: { subject: job?.title ? `${job.title} — Application` : '', body: '' },
+      [key]: {
+        subject: job?.title ? `${job.title} — Application` : '',
+        body: '',
+        emailId: p[key]?.emailId,
+      },
     }));
     setComposeMode(p => ({ ...p, [company]: 'manual' }));
     setExpandedPrev(p => ({ ...p, [company]: true }));
   };
 
-  // ── Enhance existing email with AI ────────────────────────────────
   const enhanceEmail = async (company) => {
     const companyData = data.companies.find(c => c.company === company);
-    const preview = previews[company];
-    if (!preview) return;
+    const email = pickEditorEmail(company);
+    const preview = email ? emailDrafts[draftKey(company, email)] : null;
+    if (!preview?.body) return;
     const job = companyData?.jobs[0];
     const jd = jdPasteText[company]?.trim() || job?.description || '';
 
@@ -245,9 +337,11 @@ export default function OutreachManager() {
         jobTitle:       job?.title,
         jobDescription: jd,
       });
-      setPreviews(p => ({
+      const key = draftKey(company, email);
+      const payload = res.data?.data ?? res.data;
+      setEmailDrafts(p => ({
         ...p,
-        [company]: { ...p[company], subject: res.data.subject, body: res.data.body },
+        [key]: { ...p[key], subject: payload.subject, body: payload.body, emailId: p[key]?.emailId },
       }));
       setComposeMode(p => ({ ...p, [company]: 'generated' }));
       toast.success('Email enhanced!');
@@ -258,32 +352,28 @@ export default function OutreachManager() {
     }
   };
 
-  // ── Optimize resume keywords for a specific company (Pro) ────────
   const optimizeResume = async (company) => {
     const companyData = data.companies.find(c => c.company === company);
     if (!companyData) return;
     const job = companyData.jobs[0];
-
-    // Use pasted JD if available (more complete than stored description)
     const jd = jdPasteText[company]?.trim() || job.description || '';
 
     setOptimizing(p => ({ ...p, [company]: true }));
     try {
-      const { data: res } = await api.post('/outreach/optimize-resume', {
+      const body = {
         jobTitle:       job.title,
         jobDescription: jd,
         company,
-        resumeText:     resumePasteText[company] || undefined,
-      });
-      setOptimizedResumes(p => ({ ...p, [company]: res.data }));
-      const score = (res.data.atsScoreAfter || 0) - (res.data.atsScoreBefore || 0);
-      setShowComparison(p => ({ ...p, [company]: true })); // auto-open comparison
+      };
+      if (selectedResumeId) body.resumeId = selectedResumeId;
+      const { data: res } = await api.post('/outreach/optimize-resume', body);
+      const payload = res.data?.data ?? res.data;
+      setOptimizedResumes(p => ({ ...p, [company]: payload }));
+      const score = (payload.atsScoreAfter || 0) - (payload.atsScoreBefore || 0);
+      setShowComparison(p => ({ ...p, [company]: true }));
       toast.success(`Resume optimized for ${company}! ATS match +${score}%`);
     } catch (err) {
-      const msg = err.response?.data?.message || 'Optimization failed';
-      toast.error(msg);
-      // Auto-open the paste box so user can provide resume text manually
-      setShowPasteBox(p => ({ ...p, [company]: true }));
+      toast.error(err.response?.data?.message || 'Optimization failed');
     } finally {
       setOptimizing(p => ({ ...p, [company]: false }));
     }
@@ -291,12 +381,6 @@ export default function OutreachManager() {
 
   const sendEmail = async (company) => {
     const companyData = data.companies.find(c => c.company === company);
-    const preview     = previews[company];
-
-    if (!preview) { toast.error('Compose or generate an email first'); return; }
-    if (!preview.subject && !preview.body) { toast.error('Add a subject and body before sending'); return; }
-
-    // Use only selected emails for this company
     const allContacts = companyData.allRecruiterContacts?.length > 0
       ? companyData.allRecruiterContacts
       : companyData.recruiterEmail
@@ -308,47 +392,48 @@ export default function OutreachManager() {
       .map(c => ({ email: c.email, name: c.name || null }));
 
     if (recipients.length === 0) { toast.error('Select at least one email to send to'); return; }
+    if (!allSelectedHaveDrafts(company)) {
+      toast.error('Generate or compose a unique email for each selected recipient');
+      return;
+    }
 
     setSending(p => ({ ...p, [company]: true }));
     try {
-      // Always fetch the clean pdfkit template resume when attaching
       let resumeBuffer   = undefined;
       let resumeFilename = undefined;
 
       if (attachResume) {
         try {
-          const { data: pdfRes } = await api.get('/outreach/generate-resume-pdf');
-          resumeBuffer   = pdfRes.data.resumeBuffer;
-          resumeFilename = pdfRes.data.filename;
-        } catch {
-          // Fallback: let backend attach original uploaded resume
-        }
+          const params = selectedResumeId ? { resumeId: selectedResumeId } : {};
+          const { data: pdfRes } = await api.get('/outreach/generate-resume-pdf', { params });
+          const pr = pdfRes.data?.data ?? pdfRes.data;
+          resumeBuffer   = pr.resumeBuffer;
+          resumeFilename = pr.filename;
+        } catch { /* backend attaches from library */ }
       }
 
-      // Use the first valid job _id as jobId (from search results or linkedinJobId from URL)
       const resolvedJobId = companyData.jobs[0]?._id || linkedinJobId || undefined;
+      const rid = selectedResumeId || undefined;
 
-      const basePayload = {
-        subject:        preview.subject,
-        body:           preview.body,
-        company,
-        jobId:          resolvedJobId,
-        attachResume:   attachResume && !resumeBuffer,  // backend fallback only if PDF fetch failed
-        resumeBuffer,
-        resumeFilename,
-      };
-
-      // Send sequentially to each selected recipient
       let successCount = 0;
-      for (let i = 0; i < recipients.length; i++) {
+      for (let i = 0; i < recipients.length; i += 1) {
         const { email: to, name: recruiterName } = recipients[i];
+        const draft = emailDrafts[draftKey(company, to)];
+        if (!draft?.subject?.trim() || !draft.body?.trim()) continue;
         await api.post('/outreach/send', {
-          ...basePayload,
+          subject:      draft.subject,
+          body:         draft.body,
+          company,
+          jobId:        resolvedJobId,
           to,
           recruiterName,
-          emailId: i === 0 ? preview.emailId : undefined,
+          emailId:      draft.emailId,
+          attachResume: attachResume && !resumeBuffer,
+          resumeBuffer,
+          resumeFilename,
+          resumeId:    rid,
         });
-        successCount++;
+        successCount += 1;
         if (i < recipients.length - 1) await new Promise(r => setTimeout(r, 600));
       }
 
@@ -384,13 +469,12 @@ export default function OutreachManager() {
     let successCount = 0;
 
     for (const company of toSend) {
-      // Generate if not already done
-      if (!previews[company.company]) {
+      if (!allSelectedHaveDrafts(company.company)) {
         await generateEmail(company.company);
         await new Promise(r => setTimeout(r, 500));
       }
       await sendEmail(company.company);
-      successCount++;
+      successCount += 1;
       await new Promise(r => setTimeout(r, 1000));
     }
 
@@ -530,7 +614,7 @@ export default function OutreachManager() {
           <div className="mt-0.5 text-xs text-gray-500">HR Emails Found</div>
         </CardSurface>
         <CardSurface className="text-center">
-          <div className="text-2xl font-bold text-blue-600">{Object.keys(previews).length}</div>
+          <div className="text-2xl font-bold text-blue-600">{Object.keys(emailDrafts).length}</div>
           <div className="mt-0.5 text-xs text-gray-500">Emails Generated</div>
         </CardSurface>
         <CardSurface className="text-center">
@@ -565,11 +649,28 @@ export default function OutreachManager() {
               </p>
               <p className="text-xs text-gray-500">
                 {hasResume
-                  ? 'Your uploaded resume PDF will be attached'
+                  ? 'Choose which saved resume to attach (up to 3 in Profile)'
                   : 'Upload a resume in Profile → Resume to enable this'}
               </p>
             </div>
           </div>
+
+          {hasResume && resumesList.length > 0 && (
+            <div className="w-full sm:w-auto min-w-[200px]">
+              <label className="text-xs font-medium text-gray-600">Select resume</label>
+              <select
+                className="input mt-1 text-sm"
+                value={selectedResumeId}
+                onChange={(e) => setSelectedResumeId(e.target.value)}
+              >
+                {resumesList.map((r) => (
+                  <option key={r.id || r.originalName} value={r.id || ''}>
+                    {(r.name || r.originalName) + (r.isDefault ? ' (default)' : '')}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {isPro && hasResume && (
             <div className="flex items-center gap-2">
@@ -822,7 +923,7 @@ export default function OutreachManager() {
 
                   {/* Actions */}
                   <div className="flex flex-col gap-2 flex-shrink-0">
-                    {!previews[company.company] ? (
+                    {!allSelectedHaveDrafts(company.company) ? (
                       <>
                         <button
                           onClick={() => generateEmail(company.company)}
@@ -878,9 +979,29 @@ export default function OutreachManager() {
                 </div>
 
                 {/* Email preview */}
-                {previews[company.company] && expandedPrev[company.company] && (
+                {expandedPrev[company.company] && (composeMode[company.company] === 'manual' || companyHasAnyDraft(company.company)) && (
                   <div className="mt-3 ml-8 border border-gray-200 rounded-xl overflow-hidden">
                     <div className="bg-gray-50 border-b border-gray-200">
+                      {(selectedEmails[company.company] || []).length > 1 && (
+                        <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap gap-1">
+                          <span className="text-[10px] font-semibold text-gray-500 uppercase mr-1 self-center">To</span>
+                          {(selectedEmails[company.company] || []).map((em) => (
+                            <button
+                              key={em}
+                              type="button"
+                              onClick={() => setActiveEditorEmail((a) => ({ ...a, [company.company]: em }))}
+                              className={cn(
+                                'text-xs px-2 py-1 rounded-lg border transition-colors',
+                                pickEditorEmail(company.company) === em
+                                  ? 'border-blue-600 bg-blue-600 text-white'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+                              )}
+                            >
+                              {em}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {/* Row 1: mode label + Enhance / Re-generate */}
                       <div className="px-3 py-2 flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
@@ -906,7 +1027,7 @@ export default function OutreachManager() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => enhanceEmail(company.company)}
-                            disabled={enhancing[company.company] || !previews[company.company]?.body}
+                            disabled={enhancing[company.company] || !currentDraft(company.company)?.body}
                             className="btn btn-sm bg-violet-100 text-violet-700 hover:bg-violet-200 border-violet-200 flex items-center gap-1"
                             title="Use AI to enhance and improve this email"
                           >
@@ -916,10 +1037,13 @@ export default function OutreachManager() {
                             }
                           </button>
                           <button
-                            onClick={() => generateEmail(company.company)}
+                            onClick={() => generateEmail(company.company, {
+                              skipCache: true,
+                              onlyEmail: pickEditorEmail(company.company),
+                            })}
                             disabled={generating[company.company]}
                             className="btn btn-sm btn-secondary flex items-center gap-1"
-                            title="Regenerate with AI"
+                            title="Regenerate variation for this recipient"
                           >
                             {generating[company.company]
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -943,13 +1067,6 @@ export default function OutreachManager() {
                               : <><Wand2 className="w-3.5 h-3.5" /> Optimize Resume <span className="text-purple-500 text-xs">3 cr</span></>
                             }
                           </button>
-                          <button
-                            onClick={() => setShowPasteBox(p => ({ ...p, [company.company]: !p[company.company] }))}
-                            className="text-xs text-gray-400 hover:text-purple-600 underline underline-offset-2"
-                            title="Paste your resume text for better extraction (use if auto-extraction is incomplete)"
-                          >
-                            {showPasteBox[company.company] ? 'Hide text' : 'Paste resume text'}
-                          </button>
                         </div>
                       )}
                       {optimizedResumes[company.company] && (
@@ -966,29 +1083,6 @@ export default function OutreachManager() {
                         </div>
                       )}
                     </div>
-
-                    {/* Paste resume text box — for when PDF auto-extraction is incomplete */}
-                    {showPasteBox[company.company] && !optimizedResumes[company.company] && (
-                      <div className="px-3 py-3 bg-purple-50 border-b border-purple-100">
-                        <p className="text-xs font-semibold text-purple-800 mb-1 flex items-center gap-1">
-                          <FileText className="w-3.5 h-3.5" /> Paste Your Full Resume Text
-                        </p>
-                        <p className="text-xs text-purple-600 mb-2">
-                          If the comparison shows incomplete resume content, paste your full resume text here — it will be used for accurate AI optimization.
-                        </p>
-                        <textarea
-                          className="w-full text-xs font-mono border border-purple-200 rounded p-2 focus:outline-none focus:border-purple-400 bg-white resize-none"
-                          rows={12}
-                          placeholder="Paste your complete resume text here (Ctrl+A, Ctrl+C from your resume document)..."
-                          value={resumePasteText[company.company] || ''}
-                          onChange={e => setResumePasteText(p => ({ ...p, [company.company]: e.target.value }))}
-                        />
-                        <p className="text-xs text-purple-400 mt-1">
-                          {resumePasteText[company.company]?.length || 0} characters pasted
-                          {resumePasteText[company.company]?.length > 200 && ' ✓ Ready to optimize'}
-                        </p>
-                      </div>
-                    )}
 
                     {/* Resume optimization result panel */}
                     {optimizedResumes[company.company] && (() => {
@@ -1168,21 +1262,44 @@ export default function OutreachManager() {
                     })()}
 
                     <div className="p-3 space-y-2">
+                      {!currentDraft(company.company) && (
+                        <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                          No draft for this recipient yet. Click <strong>Generate</strong> or switch to another address.
+                        </p>
+                      )}
                       <div>
                         <span className="text-xs text-gray-400">Subject: </span>
                         <input
-                          value={previews[company.company].subject}
-                          onChange={e => setPreviews(p => ({ ...p, [company.company]: { ...p[company.company], subject: e.target.value } }))}
-                          className="input text-sm py-1 mt-1"
+                          value={currentDraft(company.company)?.subject || ''}
+                          onChange={(e) => {
+                            const em = pickEditorEmail(company.company);
+                            const key = draftKey(company.company, em);
+                            setEmailDrafts((p) => {
+                              const cur = p[key] || {};
+                              const next = { ...cur, subject: e.target.value };
+                              scheduleDraftSave(next.emailId, next.subject, next.body, selectedResumeId);
+                              return { ...p, [key]: next };
+                            });
+                          }}
+                          className="input mt-1 py-1 text-sm"
                         />
                       </div>
                       <div>
                         <span className="text-xs text-gray-400">Body: </span>
                         <textarea
-                          value={previews[company.company].body}
-                          onChange={e => setPreviews(p => ({ ...p, [company.company]: { ...p[company.company], body: e.target.value } }))}
+                          value={currentDraft(company.company)?.body || ''}
+                          onChange={(e) => {
+                            const em = pickEditorEmail(company.company);
+                            const key = draftKey(company.company, em);
+                            setEmailDrafts((p) => {
+                              const cur = p[key] || {};
+                              const next = { ...cur, body: e.target.value };
+                              scheduleDraftSave(next.emailId, next.subject, next.body, selectedResumeId);
+                              return { ...p, [key]: next };
+                            });
+                          }}
                           rows={5}
-                          className="input text-sm mt-1 resize-none"
+                          className="input mt-1 resize-none text-sm"
                         />
                       </div>
                     </div>

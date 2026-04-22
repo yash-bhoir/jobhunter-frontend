@@ -51,7 +51,7 @@ const fadeIn = {
 };
 
 export default function Profile() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refetch } = useAuth();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -106,20 +106,43 @@ export default function Profile() {
     if (!file) return;
     if (file.type !== 'application/pdf') { toast.error('PDF only'); return; }
     if (file.size > 5 * 1024 * 1024)    { toast.error('Max 5MB'); return; }
+    const existing = user?.resumes?.length || 0;
+    if (existing >= 3) { toast.error('Maximum 3 resumes — remove one first'); return; }
     setResumeLoading(true);
     try {
       const form = new FormData();
       form.append('resume', file);
-      const res = await api.post('/profile/resume', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-      updateUser({ resume: res.data.data });
-      toast.success('Resume uploaded!');
+      if (existing > 0) form.append('mode', 'add');
+      await api.post('/profile/resume', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await refetch();
+      toast.success(existing > 0 ? 'Resume added to library' : 'Resume uploaded!');
     } catch (err) { toast.error(err.response?.data?.message || 'Upload failed'); }
-    finally { setResumeLoading(false); }
+    finally { setResumeLoading(false); e.target.value = ''; }
   };
 
-  const deleteResume = async () => {
-    try { await api.delete('/profile/resume'); updateUser({ resume: null }); toast.success('Resume deleted'); }
-    catch { toast.error('Delete failed'); }
+  const deleteResumeSlot = async (id) => {
+    if (!id) return deleteResumeAll();
+    try {
+      await api.delete(`/profile/resumes/${id}`);
+      await refetch();
+      toast.success('Resume removed');
+    } catch { toast.error('Delete failed'); }
+  };
+
+  const setDefaultResume = async (id) => {
+    try {
+      await api.patch(`/profile/resumes/${id}`, { isDefault: true });
+      await refetch();
+      toast.success('Default resume updated');
+    } catch { toast.error('Update failed'); }
+  };
+
+  const deleteResumeAll = async () => {
+    try {
+      await api.delete('/profile/resume');
+      await refetch();
+      toast.success('All resumes deleted');
+    } catch { toast.error('Delete failed'); }
   };
 
   const completionPct = user?.profile?.completionPct || 0;
@@ -411,58 +434,66 @@ export default function Profile() {
               {/* ── Resume ─────────────────────────────────────── */}
               {activeTab === 'resume' && (
                 <div className="p-6 space-y-5">
-                  <SectionTitle icon={Upload} label="Resume (PDF)" />
+                  <SectionTitle icon={Upload} label="Resumes (PDF, up to 3)" />
 
-                  {user?.resume?.url ? (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.97 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="border-2 border-emerald-200 bg-emerald-50 rounded-2xl p-5"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center flex-shrink-0">
-                          <CheckCircle className="w-6 h-6 text-emerald-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-emerald-800">Resume uploaded</p>
-                          <p className="text-sm text-emerald-600 truncate mt-0.5">{user.resume.originalName}</p>
-                        </div>
-                        <button type="button" onClick={deleteResume} className="btn btn-danger btn-sm">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      {user.resume.isParsed && user.resume.extractedSkills?.length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-emerald-200">
-                          <p className="text-xs font-bold text-emerald-700 mb-2">
-                            AI extracted {user.resume.extractedSkills.length} skills:
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {user.resume.extractedSkills.slice(0, 12).map(s => (
-                              <Badge key={s} variant="green" className="text-xs">
-                                {s}
-                              </Badge>
-                            ))}
+                  {(user?.resumes?.length > 0 || user?.resume?.url) && (
+                    <div className="space-y-2">
+                      {(user.resumes && user.resumes.length > 0 ? user.resumes : [{ id: null, name: user.resume?.originalName, originalName: user.resume?.originalName, isDefault: true, legacy: true }]).map((r) => (
+                        <div
+                          key={r.id || r.originalName}
+                          className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3"
+                        >
+                          <CheckCircle className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-emerald-900">{r.name || r.originalName}</p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {r.isDefault && <Badge variant="green" className="text-xs">Default</Badge>}
+                              {r.legacy && <Badge variant="gray" className="text-xs">Legacy</Badge>}
+                            </div>
                           </div>
+                          {!r.isDefault && r.id && (
+                            <button type="button" className="btn btn-secondary btn-sm shrink-0 text-xs" onClick={() => setDefaultResume(r.id)}>
+                              Set default
+                            </button>
+                          )}
+                          <button type="button" className="btn btn-danger btn-sm shrink-0" onClick={() => deleteResumeSlot(r.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                      )}
-                    </motion.div>
-                  ) : (
-                    <label className="block cursor-pointer group">
+                      ))}
+                    </div>
+                  )}
+
+                  {(user?.resumes?.length || 0) < 3 && (
+                    <label className="group block cursor-pointer">
                       <input type="file" accept=".pdf" onChange={handleResumeUpload} className="hidden" />
-                      <div className="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center transition-all group-hover:border-blue-400 group-hover:bg-blue-50/50">
+                      <div className="rounded-2xl border-2 border-dashed border-gray-200 p-8 text-center transition-all group-hover:border-blue-400 group-hover:bg-blue-50/50">
                         {resumeLoading ? (
-                          <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto mb-3" />
+                          <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-blue-600" />
                         ) : (
-                          <div className="w-14 h-14 rounded-2xl bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center mx-auto mb-4 transition-colors">
-                            <Upload className="w-7 h-7 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 transition-colors group-hover:bg-blue-100">
+                            <Upload className="h-7 w-7 text-gray-400 transition-colors group-hover:text-blue-500" />
                           </div>
                         )}
-                        <p className="font-bold text-gray-700 group-hover:text-blue-700 transition-colors">
-                          {resumeLoading ? 'Uploading & parsing...' : 'Drop your resume or click to upload'}
+                        <p className="font-bold text-gray-700 transition-colors group-hover:text-blue-700">
+                          {resumeLoading ? 'Uploading…' : (user?.resumes?.length ? 'Add another PDF' : 'Drop your resume or click to upload')}
                         </p>
-                        <p className="text-sm text-gray-400 mt-1">PDF only · max 5MB</p>
+                        <p className="mt-1 text-sm text-gray-400">PDF only · max 5MB · {(user?.resumes?.length || 0)}/3</p>
                       </div>
                     </label>
+                  )}
+
+                  {user?.resume?.isParsed && user.resume.extractedSkills?.length > 0 && (
+                    <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
+                      <p className="mb-2 text-xs font-bold text-emerald-700">
+                        AI extracted {user.resume.extractedSkills.length} skills (default resume):
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {user.resume.extractedSkills.slice(0, 12).map((s) => (
+                          <Badge key={s} variant="green" className="text-xs">{s}</Badge>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
