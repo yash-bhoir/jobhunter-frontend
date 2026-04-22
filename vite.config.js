@@ -5,6 +5,9 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Saves memory during `vite build` (important on Render / small CI runners)
+    reportCompressedSize: false,
+    sourcemap:            false,
     rollupOptions: {
       output: {
         manualChunks: {
