@@ -1,10 +1,56 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import {
+  getAccessToken,
+  setAccessToken,
+  clearAccessToken,
+  isAuthRefreshCircuitOpen,
+  openAuthRefreshCircuit,
+  clearAuthRefreshCircuit,
+} from './accessToken';
 
 export const api = axios.create({
   baseURL:         import.meta.env.VITE_API_URL || '/api/v1',
   withCredentials: true,
   timeout:         30000,
+});
+
+function isAuthPathNoBearer(url = '') {
+  return (
+    url.includes('/auth/login')
+    || url.includes('/auth/register')
+    || url.includes('/auth/refresh')
+    || url.includes('/auth/oauth-exchange')
+    || url.includes('/auth/forgot-password')
+    || url.includes('/auth/reset-password')
+    || url.includes('/auth/google')
+    || url.includes('/auth/admin/verify-otp')
+  );
+}
+
+/** 401 on these URLs must NOT trigger refresh (avoids loops). `/auth/me` is NOT listed. */
+function isAuthPathSkipRefreshOn401(url = '') {
+  if (!url) return false;
+  const paths = [
+    '/auth/login',
+    '/auth/register',
+    '/auth/refresh',
+    '/auth/oauth-exchange',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+    '/auth/google',
+    '/auth/admin/verify-otp',
+  ];
+  return paths.some((p) => url.includes(p));
+}
+
+api.interceptors.request.use((config) => {
+  const url = config.url || '';
+  if (!isAuthPathNoBearer(url)) {
+    const t = getAccessToken();
+    if (t) config.headers.Authorization = `Bearer ${t}`;
+  }
+  return config;
 });
 
 // Handle responses
@@ -30,9 +76,15 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !original._retry &&
       !original._skipAuthRefresh &&
-      !original.url?.includes('/auth/') &&
-      !isGmailAuthError
+      !isAuthPathSkipRefreshOn401(original.url || '')
+      && !isGmailAuthError
     ) {
+      if (isAuthRefreshCircuitOpen()) {
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.replace('/login');
+        }
+        return Promise.reject(error);
+      }
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -43,12 +95,19 @@ api.interceptors.response.use(
       isRefreshing    = true;
 
       try {
-        await api.post('/auth/refresh', {}, { _skipAuthRefresh: true });
+        const refreshRes = await api.post('/auth/refresh', {}, { _skipAuthRefresh: true });
+        const next = refreshRes.data?.data?.accessToken;
+        if (next) {
+          setAccessToken(next);
+          clearAuthRefreshCircuit();
+        }
         processQueue(null);
         return api(original);
       } catch (refreshErr) {
         processQueue(refreshErr);
-        window.location.href = '/login';
+        openAuthRefreshCircuit();
+        clearAccessToken();
+        window.location.replace('/login');
         return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;
@@ -64,7 +123,7 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const url    = error.config?.url || '';
     const skipReport =
-      status === 401 || status === 404 || status === 402 ||
+      status === 401 || status === 404 || status === 402 || status === 429 ||
       !status ||  // network/timeout — no response
       url.includes('/errors/report') ||
       url.includes('/auth/') ||

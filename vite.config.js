@@ -65,6 +65,16 @@ export default defineConfig({
   server: {
     port:       3000,
     strictPort: true,
+    // Listen on all addresses so both http://localhost:3000 and http://127.0.0.1:3000 work on Windows
+    // (avoids IPv4/IPv6-only mismatches that surface as net::ERR_INTERNET_DISCONNECTED).
+    host: true,
+    hmr: {
+      protocol: 'ws',
+      port:       3000,
+    },
+    ...(process.env.VITE_USE_POLLING === 'true'
+      ? { watch: { usePolling: true, interval: 1000 } }
+      : {}),
     proxy: {
       '/api':        proxyToBackend(),
       '/socket.io': { ...proxyToBackend(), ws: true },

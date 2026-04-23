@@ -96,7 +96,7 @@ function AdminOtpScreen({ userId, onBack }) {
     try {
       const res = await api.post('/auth/admin/verify-otp', { userId, otp: code });
       if (res.data?.data?.user) {
-        loginWithToken(res.data.data.user);
+        loginWithToken(res.data.data.user, res.data.data.accessToken);
         toast.success('Welcome back, Admin!');
         navigate('/admin');
       }

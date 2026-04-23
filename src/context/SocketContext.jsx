@@ -21,9 +21,12 @@ export function SocketProvider({ children }) {
     const socketUrl = envUrl || window.location.origin;
     const socket = io(socketUrl, {
       withCredentials: true,
-      transports:       ['websocket'],
-      reconnection:     true,
-      reconnectionAttempts: 5,
+      // Allow long-polling first — websocket-only often fails or reconnect-loops behind Vite’s dev proxy.
+      transports:           ['polling', 'websocket'],
+      reconnection:           true,
+      reconnectionAttempts:   8,
+      reconnectionDelay:      1000,
+      reconnectionDelayMax:   8000,
     });
 
     socket.on('connect',    () => { setConnected(true);  socket.emit('join', user._id); });

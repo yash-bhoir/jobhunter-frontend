@@ -20,6 +20,7 @@ const PAGE_TITLES = {
   '/credits':        'Credits',
   '/billing':        'Billing',
   '/linkedin':       'LinkedIn Jobs',
+  '/career-scanner': 'Career Pages',
   '/map-search':     'Map Search',
   '/insights':       'Insights',
 };

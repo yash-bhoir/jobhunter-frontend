@@ -404,9 +404,18 @@ export default function JobDetailPanel({
     }
   }, [mode, job?._id, job?._canonicalMapJob, savedJobId]);
 
-  // Auto-fetch description for LinkedIn jobs that don't have one AND have a URL
+  // Auto-fetch full JD for LinkedIn when missing or only a short teaser (e.g. email blurbs)
+  const SUBSTANTIAL_DESC_MIN = 200;
+  const hasSubstantialLinkedInDescription = (desc) =>
+    String(desc || '').trim().replace(/\s+/g, ' ').length >= SUBSTANTIAL_DESC_MIN;
+  const linkedinDescSourceUrl = (initialJob?.url || initialJob?.applyUrl || '').trim();
   useEffect(() => {
-    if (mode !== 'linkedin' || !initialJob?._id || initialJob?.description || !initialJob?.url) return;
+    if (
+      mode !== 'linkedin'
+      || !initialJob?._id
+      || hasSubstantialLinkedInDescription(initialJob?.description)
+      || !linkedinDescSourceUrl
+    ) return;
     setDescLoading(true);
     api.get(`/linkedin/jobs/${initialJob._id}/description`)
       .then(({ data }) => {
@@ -414,10 +423,11 @@ export default function JobDetailPanel({
       })
       .catch(() => {})
       .finally(() => setDescLoading(false));
-  }, [initialJob?._id, mode]);
+  }, [initialJob?._id, initialJob?.description, mode, linkedinDescSourceUrl]);
 
   const retryFetchDescription = () => {
-    if (!job?._id || !job?.url) return;
+    const u = (job?.url || job?.applyUrl || '').trim();
+    if (!job?._id || !u) return;
     setDescLoading(true);
     api.get(`/linkedin/jobs/${job._id}/description`)
       .then(({ data }) => {

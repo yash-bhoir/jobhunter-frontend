@@ -11,7 +11,8 @@ export default function AdminResumeTemplates() {
   const [name, setName] = useState('Default LaTeX');
   const [description, setDescription] = useState('');
   const [templateCode, setTemplateCode] = useState(
-    '% Wrap auto-generated resume body. Placeholder: {{BODY}}\n\\documentclass[letterpaper,11pt]{article}\n\\begin{document}\n{{BODY}}\n\\end{document}',
+    '% {{MACROS}} = packages + \\resume* commands. {{RESUME_HEADER}} = name block. {{RESUME_SECTIONS}} = rest.\n'
+    + '\\documentclass[letterpaper,11pt]{article}\n{{MACROS}}\n\\begin{document}\n{{RESUME_HEADER}}\n\\vspace{1em}\n{{RESUME_SECTIONS}}\n\\end{document}',
   );
   const [saving, setSaving] = useState(false);
 
@@ -43,7 +44,9 @@ export default function AdminResumeTemplates() {
         isActive: true,
       });
       toast.success('Template saved');
-      setName(''); setDescription(''); setTemplateCode('% {{BODY}}\n\\documentclass[letterpaper,11pt]{article}\n\\begin{document}\n{{BODY}}\n\\end{document}');
+      setName(''); setDescription(''); setTemplateCode(
+        '% {{MACROS}} + split layout\n\\documentclass[letterpaper,11pt]{article}\n{{MACROS}}\n\\begin{document}\n{{RESUME_HEADER}}\n\\vspace{1em}\n{{RESUME_SECTIONS}}\n\\end{document}',
+      );
       load();
     } catch (e) {
       toast.error(e.response?.data?.message || 'Save failed');
@@ -71,8 +74,19 @@ export default function AdminResumeTemplates() {
           Resume templates (LaTeX)
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Active template may include <code className="rounded bg-gray-100 px-1">{'{{BODY}}'}</code> where the user&apos;s
-          auto-generated sections are injected. Only one template can be active.
+          <strong>One whole-document block:</strong>{' '}
+          <code className="rounded bg-gray-100 px-1">{'{{BODY}}'}</code> = name/contact + all sections (same look as the
+          built-in PDF-style layout).{' '}
+          <strong>For your own layout:</strong> use{' '}
+          <code className="rounded bg-gray-100 px-1">{'{{RESUME_HEADER}}'}</code> (name block only) and{' '}
+          <code className="rounded bg-gray-100 px-1">{'{{RESUME_SECTIONS}}'}</code> (Education / Experience / …) around
+          your own LaTeX. Optional{' '}
+          <code className="rounded bg-gray-100 px-1">{'{{MACROS}}'}</code> before{' '}
+          <code className="rounded bg-gray-100 px-1">{'\\begin{document}'}</code> pulls in packages +{' '}
+          <code className="rounded bg-gray-100 px-1">\resumeSubheading</code> etc.; if you omit it, it is auto-inserted
+          when you use HEADER/SECTIONS only. Do not mix{' '}
+          <code className="rounded bg-gray-100 px-1">{'{{BODY}}'}</code> with SECTIONS. Spacing in placeholders is
+          ignored. Or leave the document body empty for auto-insert. Only one active template.
         </p>
       </div>
 

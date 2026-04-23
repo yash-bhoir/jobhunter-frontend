@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Search, Briefcase, Users, Mail,
   User, CreditCard, Wallet, LogOut, X, Linkedin,
-  ChevronRight, Sparkles, BarChart2, Map, Inbox,
+  ChevronRight, Sparkles, BarChart2, Map, Inbox, Building2,
 } from 'lucide-react';
 import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { to: '/map-search', label: 'Map Search',   icon: Map,             color: 'cyan'   },
   { to: '/email-jobs', label: 'Email Jobs',   icon: Inbox,           color: 'emerald'},
   { to: '/linkedin',   label: 'LinkedIn Jobs',icon: Linkedin,        color: 'blue'   },
+  { to: '/career-scanner', label: 'Career Pages', icon: Building2,   color: 'violet' },
   { to: '/outreach',   label: 'Outreach',     icon: Mail,            color: 'emerald'},
   { to: '/insights',   label: 'Insights',     icon: BarChart2,       color: 'violet' },
 ];

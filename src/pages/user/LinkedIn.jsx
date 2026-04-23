@@ -399,8 +399,9 @@ export default function LinkedIn() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className={`text-xs font-medium ${job.source === 'career_page' ? 'text-violet-500' : 'text-gray-400'}`}>
-                            {job.source === 'career_page' ? '🏢 Career Page' : job.source?.replace(/_/g, ' ')}
+                          <span className={`text-xs font-medium ${job.source === 'career_page' || job.source === 'dream_company' ? 'text-violet-500' : 'text-gray-400'}`}>
+                            {job.source === 'career_page' ? '🏢 Career Page'
+                              : job.source === 'dream_company' ? '⭐ Dream company' : job.source?.replace(/_/g, ' ')}
                           </span>
                           {job.salary && <span className="text-xs text-gray-400">· {job.salary}</span>}
                           <span className="text-xs text-gray-300">· {fAgo(job.createdAt)}</span>
