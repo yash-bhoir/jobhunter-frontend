@@ -8,13 +8,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const fetchMe = useCallback(async () => {
-    const token = localStorage.getItem('accessToken');
-    if (!token) { setLoading(false); return; }
     try {
-      const { data } = await api.get('/user/me');
+      const { data } = await api.get('/auth/me');
       setUser(data.data);
     } catch {
-      localStorage.removeItem('accessToken');
       setUser(null);
     } finally {
       setLoading(false);
@@ -27,14 +24,12 @@ export function AuthProvider({ children }) {
     const { data } = await api.post('/auth/login', credentials);
     // Admin 2-FA: backend returns { otpRequired: true, userId } — no token yet
     if (data.data?.otpRequired) return data.data;
-    localStorage.setItem('accessToken', data.data.accessToken);
     setUser(data.data.user);
     return data.data;
   };
 
   // Called after admin OTP is verified to hydrate auth state
-  const loginWithToken = (accessToken, userData) => {
-    localStorage.setItem('accessToken', accessToken);
+  const loginWithToken = (userData) => {
     setUser(userData);
   };
 
@@ -45,7 +40,6 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch {}
-    localStorage.removeItem('accessToken');
     setUser(null);
   };
 

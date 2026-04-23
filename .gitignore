@@ -1,3 +1,6 @@
+# Vite dependency pre-bundle (see vite.config.js cacheDir)
+.vite/
+
 # Dependencies
 node_modules/
 .pnp

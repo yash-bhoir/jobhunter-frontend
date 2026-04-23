@@ -1,17 +1,15 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, Briefcase } from 'lucide-react';
-import { useAuth } from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
+import { api } from '@utils/axios';
 
 export default function OAuthCallback() {
   const [searchParams] = useSearchParams();
   const navigate       = useNavigate();
-  const { refetch }    = useAuth();
   const toast          = useToast();
 
   useEffect(() => {
-    const token = searchParams.get('token');
     const error = searchParams.get('error');
 
     if (error) {
@@ -20,15 +18,12 @@ export default function OAuthCallback() {
       return;
     }
 
-    if (token) {
-      localStorage.setItem('accessToken', token);
-      refetch().then(() => {
+    api.get('/auth/me')
+      .then(() => {
         toast.success('Logged in with Google!');
         navigate('/dashboard');
-      });
-    } else {
-      navigate('/login');
-    }
+      })
+      .catch(() => navigate('/login'));
   }, []);
 
   return (

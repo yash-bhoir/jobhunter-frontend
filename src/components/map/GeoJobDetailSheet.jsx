@@ -1,8 +1,10 @@
 import JobDetailPanel from '@components/jobs/JobDetailPanel';
 
 export default function GeoJobDetailSheet({ job, savedIds, onSaveToggle, savedJobDocIds, onClose }) {
-  const isSaved  = savedIds?.has(job._id) ?? false;
-  const jobDocId = savedJobDocIds?.[job._id] || null;
+  const sid = String(job._id);
+  const isSaved =
+    (savedIds?.has(sid) ?? false) || job.status === 'saved';
+  const jobDocId = savedJobDocIds?.[sid] || null;
 
   return (
     <>

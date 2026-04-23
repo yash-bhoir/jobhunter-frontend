@@ -39,6 +39,15 @@ const stats = [
   { value: '10x',  label: 'Faster' },
 ];
 
+/** Same rules as `api` baseURL: relative `/api/v1` uses Vite proxy (same tab origin). Absolute URL hits the API host directly. */
+function googleOAuthStartUrl() {
+  const raw = (import.meta.env.VITE_API_URL ?? '/api/v1').toString().trim();
+  const base = raw.replace(/\/$/, '');
+  if (/^https?:\/\//i.test(base)) return `${base}/auth/google`;
+  const path = `${base.startsWith('/') ? base : `/${base}`}/auth/google`;
+  return path.replace(/([^:]\/)\/+/g, '$1');
+}
+
 // ── Admin OTP screen ──────────────────────────────────────────────
 function AdminOtpScreen({ userId, onBack }) {
   const [otp,     setOtp]     = useState(['', '', '', '', '', '']);
@@ -86,8 +95,8 @@ function AdminOtpScreen({ userId, onBack }) {
     setLoading(true); setError('');
     try {
       const res = await api.post('/auth/admin/verify-otp', { userId, otp: code });
-      if (res.data?.data?.accessToken) {
-        loginWithToken(res.data.data.accessToken, res.data.data.user);
+      if (res.data?.data?.user) {
+        loginWithToken(res.data.data.user);
         toast.success('Welcome back, Admin!');
         navigate('/admin');
       }
@@ -190,6 +199,14 @@ export default function Login() {
   const navigate     = useNavigate();
   const [searchParams] = useSearchParams();
   const urlError     = searchParams.get('error');
+  const oauthErrorMessage = (() => {
+    if (!urlError) return '';
+    if (urlError === 'google_not_configured') {
+      return 'Google sign-in is not set up on the server yet (missing API keys). Use email/password or ask the admin to add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the backend .env.';
+    }
+    if (urlError === 'google_failed') return 'Google sign-in failed. Please try again.';
+    return 'Sign-in error. Please try again.';
+  })();
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
@@ -222,7 +239,7 @@ export default function Login() {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`;
+    window.location.assign(googleOAuthStartUrl());
   };
 
   // ── OTP screen ──
@@ -384,7 +401,7 @@ export default function Login() {
             <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-red-100 bg-red-50 p-3.5">
               <AlertCircle className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
               <Text variant="small" tone="danger" as="p" className="m-0">
-                Google sign-in failed. Please try again.
+                {oauthErrorMessage}
               </Text>
             </div>
           )}

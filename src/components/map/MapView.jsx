@@ -97,7 +97,7 @@ export default function MapView({
           key={job._id}
           job={job}
           index={index}
-          isSelected={selectedJobId === job._id}
+          isSelected={String(selectedJobId) === String(job._id)}
           onClick={onMarkerClick}
           savedIds={savedIds}
           onSaveToggle={onSaveToggle}

@@ -1,15 +1,57 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, MapPin, Loader2, Clock, LocateFixed, Navigation, X, History } from 'lucide-react';
+import {
+  Search, MapPin, Loader2, Clock, LocateFixed, Navigation, X, History, Sparkles,
+} from 'lucide-react';
 import MapView            from '@components/map/MapView';
 import JobListPanel       from '@components/map/JobListPanel';
 import RadiusControl      from '@components/map/RadiusControl';
 import GeoJobDetailSheet  from '@components/map/GeoJobDetailSheet';
 import { api }            from '@utils/axios';
-import { useDebounce }    from '@hooks/useDebounce';
+import { useAuth }        from '@hooks/useAuth';
 
 const DEFAULT_CENTER    = { lat: 19.0760, lng: 72.8777 };
 const DEFAULT_LOCATION  = 'Mumbai, India';
 const DEFAULT_RADIUS_KM = 10;
+/** Quick radius buttons — keep in sync with slider min/step in RadiusControl. */
+const RADIUS_PRESETS_KM = [5, 10, 25, 50, 100];
+
+const EARTH_KM = 6371;
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function jobMapKey(job) {
+  if (job.externalId) return `e:${job.externalId}`;
+  if (job._id != null) return `i:${String(job._id)}`;
+  return `h:${(job.title || '')}|${(job.company || '')}|${(job.applyUrl || '').slice(0, 40)}`;
+}
+
+function jobWithinKmOf(job, centerLat, centerLng, km) {
+  const c = job.location?.coordinates;
+  if (!Array.isArray(c) || c.length < 2) return false;
+  const [jlng, jlat] = c;
+  if (!Number.isFinite(jlat) || !Number.isFinite(jlng)) return false;
+  return haversineKm(centerLat, centerLng, jlat, jlng) <= km * 1.06 + 0.5;
+}
+
+/** Same place + title → widening radius keeps all previous pins still inside the new ring, then adds new API rows. */
+function searchFingerprint(lat, lng, title) {
+  return `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)},${String(title || '').trim().toLowerCase()}`;
+}
+
+function mergeWidenedJobs(prevJobs, incomingJobs, centerLat, centerLng, newRadiusKm) {
+  const kept = prevJobs.filter((j) => jobWithinKmOf(j, centerLat, centerLng, newRadiusKm));
+  const byKey = new Map();
+  for (const j of kept) byKey.set(jobMapKey(j), j);
+  for (const j of incomingJobs) byKey.set(jobMapKey(j), j);
+  return [...byKey.values()].sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+}
 
 // ── localStorage map-search history ─────────────────────────────
 const HISTORY_KEY = 'mapSearchHistory';
@@ -32,7 +74,15 @@ function fAgo(ts) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** Nominatim requires a descriptive User-Agent (https://operations.osmfoundation.org/policies/nominatim/). */
+const NOMINATIM_HEADERS = {
+  'Accept-Language': 'en',
+  'User-Agent':      'JobHunter/1.0 (map location; https://github.com/jobhunter)',
+};
+
 export default function MapSearch() {
+  const { user, loading: authLoading } = useAuth();
+
   const [center,         setCenter]         = useState(DEFAULT_CENTER);
   const [locationName,   setLocationName]   = useState(DEFAULT_LOCATION);
   const [radius,         setRadius]         = useState(DEFAULT_RADIUS_KM);
@@ -46,6 +96,8 @@ export default function MapSearch() {
   const [hasSearched,    setHasSearched]    = useState(false);
   const [savedIds,       setSavedIds]       = useState(new Set());
   const [savedJobDocIds, setSavedJobDocIds] = useState({});
+  const [enrichLoading,  setEnrichLoading]  = useState(false);
+  const [lastMeta,        setLastMeta]       = useState(null);
 
   // History
   const [history,       setHistory]       = useState(() => getHistory());
@@ -58,32 +110,61 @@ export default function MapSearch() {
   const [locatingGps,     setLocatingGps]     = useState(false);
 
   const locationInputRef = useRef(null);
-  const sugDebounce      = useRef(null);
+  const sugDebounce        = useRef(null);
+  const sugAbortRef        = useRef(null);
+  /** After picking a row, skip one Nominatim run (otherwise the list reopens and feels like a missed click). */
+  const skipSugEffectRef   = useRef(false);
+  /** Last successful widen session: same centre + title → larger radius unions with prior list. */
+  const widenSessionRef    = useRef(null);
+  /** Once true, we stop auto-filling the title from profile (user cleared or edited the field). */
+  const mapTitleTouchedRef = useRef(false);
 
-  const debouncedRadius = useDebounce(radius, 400);
+  const resultsRadiusKm = lastMeta?.radiusKm;
+  const radiusStale =
+    hasSearched
+    && resultsRadiusKm != null
+    && Math.abs(Number(resultsRadiusKm) - Number(radius)) > 0.01;
+
+  // ── Pre-fill job title from profile (target role → current role), until user edits ──
+  useEffect(() => {
+    if (authLoading || mapTitleTouchedRef.current) return;
+    const seed = (user?.profile?.targetRole || user?.profile?.currentRole || '').trim();
+    if (!seed) return;
+    setTitleQuery((prev) => (prev.trim() ? prev : seed));
+  }, [authLoading, user?.profile?.targetRole, user?.profile?.currentRole]);
 
   // ── Load saved GeoJob IDs on mount ────────────────────────────
   useEffect(() => {
     api.get('/geo-jobs/saved-ids')
       .then(({ data }) => {
-        setSavedIds(new Set(data.data.ids));
-        setSavedJobDocIds(data.data.docIdMap || {});
+        const rawIds = data.data?.ids || [];
+        setSavedIds(new Set(rawIds.map(String)));
+        const m = data.data?.docIdMap || {};
+        setSavedJobDocIds(
+          Object.fromEntries(Object.entries(m).map(([k, v]) => [String(k), String(v)]))
+        );
       })
       .catch(() => {});
   }, []);
 
   const handleSaveToggle = useCallback((jobId, isSaved) => {
+    const id = String(jobId);
     setSavedIds(prev => {
       const next = new Set(prev);
-      isSaved ? next.add(jobId) : next.delete(jobId);
+      isSaved ? next.add(id) : next.delete(id);
       return next;
     });
     if (isSaved) {
       api.get('/geo-jobs/saved-ids')
-        .then(({ data }) => setSavedJobDocIds(data.data.docIdMap || {}))
+        .then(({ data }) => {
+          const m = data.data?.docIdMap || {};
+          setSavedJobDocIds(
+            Object.fromEntries(Object.entries(m).map(([k, v]) => [String(k), String(v)]))
+          );
+        })
         .catch(() => {});
     } else {
-      setSavedJobDocIds(prev => { const n = { ...prev }; delete n[jobId]; return n; });
+      setSavedJobDocIds(prev => { const n = { ...prev }; delete n[id]; return n; });
     }
   }, []);
 
@@ -96,13 +177,15 @@ export default function MapSearch() {
         try {
           const res  = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`,
-            { headers: { 'Accept-Language': 'en' } }
+            { headers: NOMINATIM_HEADERS }
           );
           const data = await res.json();
           const addr = data.address || {};
           const name = addr.city || addr.town || addr.village || addr.county || 'My Location';
+          skipSugEffectRef.current = true;
           setLocationName(name);
         } catch {
+          skipSugEffectRef.current = true;
           setLocationName('My Location');
         }
       },
@@ -111,23 +194,34 @@ export default function MapSearch() {
     );
   }, []);
 
-  // ── Location suggestions via Nominatim ────────────────────────
+  // ── Location suggestions via Nominatim (debounced + abort stale requests) ──
   useEffect(() => {
+    if (skipSugEffectRef.current) {
+      skipSugEffectRef.current = false;
+      clearTimeout(sugDebounce.current);
+      return;
+    }
     const q = locationName.trim();
     if (q.length < 2 || q === 'My Location' || q === 'Custom Location') {
+      sugAbortRef.current?.abort();
       setSuggestions([]);
       setShowSuggestions(false);
+      setSugLoading(false);
       return;
     }
     clearTimeout(sugDebounce.current);
     sugDebounce.current = setTimeout(async () => {
+      sugAbortRef.current?.abort();
+      const ac = new AbortController();
+      sugAbortRef.current = ac;
       setSugLoading(true);
       try {
-        const res  = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`,
-          { headers: { 'Accept-Language': 'en' } }
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=8&addressdetails=1`,
+          { headers: NOMINATIM_HEADERS, signal: ac.signal }
         );
         const data = await res.json();
+        if (ac.signal.aborted) return;
         setSuggestions(data.map(d => {
           const addr = d.address || {};
           const city = addr.city || addr.town || addr.village || addr.county || d.name || '';
@@ -138,13 +232,17 @@ export default function MapSearch() {
         }));
         setShowSuggestions(true);
         setShowHistory(false);
-      } catch {
+      } catch (e) {
+        if (e?.name === 'AbortError') return;
         setSuggestions([]);
       } finally {
-        setSugLoading(false);
+        if (!ac.signal.aborted) setSugLoading(false);
       }
-    }, 380);
-    return () => clearTimeout(sugDebounce.current);
+    }, 180);
+    return () => {
+      clearTimeout(sugDebounce.current);
+      sugAbortRef.current?.abort();
+    };
   }, [locationName]);
 
   // ── "Use my current location" button ─────────────────────────
@@ -160,13 +258,15 @@ export default function MapSearch() {
         try {
           const res  = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`,
-            { headers: { 'Accept-Language': 'en' } }
+            { headers: NOMINATIM_HEADERS }
           );
           const data = await res.json();
           const addr = data.address || {};
           const name = addr.city || addr.town || addr.village || addr.county || 'My Location';
+          skipSugEffectRef.current = true;
           setLocationName(name);
         } catch {
+          skipSugEffectRef.current = true;
           setLocationName('My Location');
         }
         setLocatingGps(false);
@@ -178,31 +278,92 @@ export default function MapSearch() {
 
   // ── Pick a suggestion ─────────────────────────────────────────
   const pickSuggestion = useCallback((sug) => {
+    sugAbortRef.current?.abort();
+    clearTimeout(sugDebounce.current);
+    skipSugEffectRef.current = true;
     setLocationName(sug.short);
     setCenter({ lat: sug.lat, lng: sug.lng });
     setSuggestions([]);
     setShowSuggestions(false);
     setShowHistory(false);
+    setSugLoading(false);
+    locationInputRef.current?.focus();
   }, []);
 
   // ── Fetch nearby jobs ─────────────────────────────────────────
   const fetchJobs = useCallback(async (overrideCenter, overrideRadius) => {
     const lat = (overrideCenter ?? center).lat;
     const lng = (overrideCenter ?? center).lng;
-    const km  = overrideRadius ?? debouncedRadius;
+    const km  = overrideRadius ?? radius;
     setLoading(true); setError(null);
     try {
       const { data } = await api.get('/geo-jobs/nearby', {
-        params: { lat, lng, radius: km, ...(titleQuery.trim() && { title: titleQuery.trim() }) },
+        params: {
+          lat,
+          lng,
+          radius: km,
+          ...(titleQuery.trim() && { title: titleQuery.trim() }),
+        },
+        // Reverse geocode + optional live API cache can exceed default 30s on slow networks.
+        timeout: 90000,
       });
-      setJobs(data.data?.jobs || []);
+      const incoming = data.data?.jobs || [];
+      const meta = data.data?.meta || null;
+      const fp = searchFingerprint(lat, lng, titleQuery);
+      const prev = widenSessionRef.current;
+
+      let display = incoming;
+      if (
+        prev
+        && prev.fingerprint === fp
+        && km > prev.radiusKm + 0.01
+        && Array.isArray(prev.jobs)
+        && prev.jobs.length > 0
+      ) {
+        display = mergeWidenedJobs(prev.jobs, incoming, lat, lng, km);
+      }
+
+      widenSessionRef.current = { fingerprint: fp, radiusKm: km, jobs: display };
+
+      setJobs(display);
+      setLastMeta(
+        meta
+          ? {
+            ...meta,
+            total: display.length,
+            ...(display.length > incoming.length
+              ? { widenKeptFromSmallerRadius: display.length - incoming.length }
+              : {}),
+          }
+          : null
+      );
       setHasSearched(true);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to load jobs.');
     } finally {
       setLoading(false);
     }
-  }, [center, debouncedRadius, titleQuery]);
+  }, [center, radius, titleQuery]);
+
+  const handleEnrichStored = useCallback(async () => {
+    setEnrichLoading(true);
+    try {
+      await api.post('/geo-jobs/enrich-stored', {
+        limit: 60,
+        centerLat: center.lat,
+        centerLng: center.lng,
+      });
+      await fetchJobs();
+    } catch {
+      setError('Could not run geo enrichment. Try again later.');
+    } finally {
+      setEnrichLoading(false);
+    }
+  }, [center.lat, center.lng, fetchJobs]);
+
+  const applyQuickRadius = useCallback((km) => {
+    setRadius(km);
+  }, []);
 
   // Radius change only updates state — no auto-search
 
@@ -221,14 +382,14 @@ export default function MapSearch() {
     try {
       const res  = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-        { headers: { 'Accept-Language': 'en' } }
+        { headers: NOMINATIM_HEADERS }
       );
       const data = await res.json();
       if (data.length > 0) {
         const newCenter = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         setCenter(newCenter);
         setSelectedJobId(null);
-        fetchJobs(newCenter, debouncedRadius);
+        fetchJobs(newCenter, radius);
         saveToHistory({ location: query, title: titleQuery.trim(), radius, lat: newCenter.lat, lng: newCenter.lng });
       } else {
         fetchJobs();
@@ -238,19 +399,24 @@ export default function MapSearch() {
       fetchJobs();
     }
     setHistory(getHistory());
-  }, [locationName, debouncedRadius, fetchJobs, titleQuery, radius, center]);
+  }, [locationName, fetchJobs, titleQuery, radius, center]);
 
   // ── Restore history entry ─────────────────────────────────────
   const restoreHistory = useCallback((entry) => {
     setShowHistory(false); setSuggestions([]); setShowSuggestions(false);
     setLocationName(entry.location);
+    mapTitleTouchedRef.current = true;
     setTitleQuery(entry.title || '');
     setRadius(entry.radius || DEFAULT_RADIUS_KM);
     const newCenter = { lat: entry.lat, lng: entry.lng };
     setCenter(newCenter);
     setSelectedJobId(null);
-    fetchJobs(newCenter, entry.radius || DEFAULT_RADIUS_KM);
-  }, [fetchJobs]);
+    widenSessionRef.current = null;
+    setJobs([]);
+    setLastMeta(null);
+    setHasSearched(false);
+    setError(null);
+  }, []);
 
   // ── Map handlers ──────────────────────────────────────────────
   const handleMapClick = useCallback((e) => {
@@ -262,14 +428,16 @@ export default function MapSearch() {
   }, []);
 
   const handleMarkerClick  = useCallback((id) => {
-    setSelectedJobId(p => p === id ? null : id);
-    const job = jobs.find(j => j._id === id);
+    const sid = String(id);
+    setSelectedJobId(p => (p != null && String(p) === sid ? null : sid));
+    const job = jobs.find(j => String(j._id) === sid);
     if (job) setDetailJob(job);
   }, [jobs]);
 
   const handleJobCardClick = useCallback((id) => {
-    setSelectedJobId(id);
-    const job = jobs.find(j => j._id === id);
+    const sid = String(id);
+    setSelectedJobId(sid);
+    const job = jobs.find(j => String(j._id) === sid);
     if (job) setDetailJob(job);
   }, [jobs]);
 
@@ -296,9 +464,13 @@ export default function MapSearch() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
             <input
               value={titleQuery}
-              onChange={e => setTitleQuery(e.target.value)}
+              onChange={(e) => {
+                mapTitleTouchedRef.current = true;
+                setTitleQuery(e.target.value);
+              }}
               onKeyDown={e => e.key === 'Enter' && geocodeAndSearch()}
-              placeholder="Job title..."
+              placeholder="Job title or keywords…"
+              title="Filled from your profile target role (Career tab) when empty — you can change it anytime."
               className="input pl-9 h-9 text-sm w-full sm:w-44 md:w-52"
             />
           </div>
@@ -319,7 +491,9 @@ export default function MapSearch() {
                     if (suggestions.length > 0) setShowSuggestions(true);
                     else if (history.length > 0 && locationName.trim().length < 2) setShowHistory(true);
                   }}
-                  onBlur={() => setTimeout(() => { setShowSuggestions(false); setShowHistory(false); }, 180)}
+                  onBlur={() => {
+                    setTimeout(() => { setShowSuggestions(false); setShowHistory(false); }, 220);
+                  }}
                   onKeyDown={e => e.key === 'Enter' && geocodeAndSearch()}
                   placeholder="Location..."
                   className="input pl-9 pr-2 h-9 text-sm w-full sm:w-36 md:w-44"
@@ -337,7 +511,12 @@ export default function MapSearch() {
 
             {/* Dropdown */}
             {dropdownMode && (
-              <div className="absolute top-full left-0 mt-1 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-xl border border-gray-200 shadow-xl z-[1200] overflow-hidden">
+              <div
+                className="absolute top-full left-0 mt-1 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-xl border border-gray-200 shadow-xl z-[1200] overflow-hidden"
+                onMouseDown={(e) => e.preventDefault()}
+                role="listbox"
+                aria-label="Location suggestions"
+              >
                 {dropdownMode === 'suggestions' && (
                   <>
                     <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-1.5">
@@ -345,8 +524,16 @@ export default function MapSearch() {
                       <span className="text-xs font-semibold text-gray-500">Location suggestions</span>
                     </div>
                     {suggestions.map((s, i) => (
-                      <button key={i} onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
-                        className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors flex items-start gap-2.5 border-b border-gray-50 last:border-0">
+                      <button
+                        key={`${s.lat},${s.lng},${s.short}`}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          pickSuggestion(s);
+                        }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-blue-50 transition-colors flex items-start gap-2.5 border-b border-gray-50 last:border-0"
+                      >
                         <MapPin className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-gray-800 truncate">{s.short}</p>
@@ -389,26 +576,66 @@ export default function MapSearch() {
           </div>
         </div>
 
-        {/* Row 2 on mobile / inline on desktop */}
-        <div className="flex items-center gap-2 sm:inline-flex sm:ml-2">
-          <RadiusControl value={radius} onChange={setRadius} />
-          <button
-            onClick={geocodeAndSearch}
-            disabled={loading}
-            className="btn btn-primary btn-sm gap-1.5 flex-shrink-0"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            <span className="hidden xs:inline">Search Jobs</span>
-            <span className="xs:hidden">Search</span>
-          </button>
-          {hasSearched && !loading && (
-            <span className="text-xs text-gray-500 flex-shrink-0 hidden sm:inline">
-              {jobs.length > 0
-                ? <><strong className="text-blue-600">{jobs.length}</strong> found</>
-                : 'No jobs'
-              }
-            </span>
-          )}
+        {/* Row 2 — radius, quick widen, search */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:ml-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <RadiusControl value={radius} onChange={setRadius} />
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide hidden sm:inline">Widen</span>
+              {RADIUS_PRESETS_KM.map((km) => (
+                <button
+                  key={km}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyQuickRadius(km)}
+                  disabled={loading}
+                  className={`text-xs font-semibold px-2 py-1 rounded-lg border transition-colors ${
+                    radius === km
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                  }`}
+                >
+                  {km} km
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={geocodeAndSearch}
+              disabled={loading}
+              className="btn btn-primary btn-sm gap-1.5 flex-shrink-0"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              <span className="hidden xs:inline">Search Jobs</span>
+              <span className="xs:hidden">Search</span>
+            </button>
+            {hasSearched && !loading && (
+              <span className="text-xs text-gray-500 flex-shrink-0 flex flex-col items-end sm:items-start sm:inline sm:flex-row sm:gap-1">
+                {jobs.length > 0
+                  ? (
+                    <>
+                      <strong className="text-blue-600">{jobs.length}</strong>
+                      {' found'}
+                      {resultsRadiusKm != null ? ` · ${resultsRadiusKm} km` : ''}
+                      {lastMeta?.widenKeptFromSmallerRadius > 0 && (
+                        <span className="text-emerald-600 font-medium">
+                          {' '}
+                          (+{lastMeta.widenKeptFromSmallerRadius} kept from smaller radius)
+                        </span>
+                      )}
+                    </>
+                  )
+                  : 'No jobs'
+                }
+                {radiusStale && (
+                  <span className="text-amber-600 font-medium max-w-[220px] sm:max-w-none text-right sm:text-left" title="Search ring matches the control; job pins are from the last request.">
+                    Ring is {radius} km — click Search to load that radius.
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -465,6 +692,10 @@ export default function MapSearch() {
             savedIds={savedIds}
             onSaveToggle={handleSaveToggle}
             savedJobDocIds={savedJobDocIds}
+            onEnrichStored={handleEnrichStored}
+            enrichLoading={enrichLoading}
+            searchAreaLabel={lastMeta?.searchAreaLabel}
+            mapCountMeta={lastMeta}
           />
         </div>
 
@@ -472,7 +703,7 @@ export default function MapSearch() {
         <div className="flex-1 relative" style={{ zIndex: 0 }}>
           <MapView
             center={center}
-            radiusMeters={debouncedRadius * 1000}
+            radiusMeters={radius * 1000}
             jobs={jobs}
             loading={loading}
             selectedJobId={selectedJobId}
@@ -486,6 +717,33 @@ export default function MapSearch() {
             <div className="lg:hidden absolute top-2 right-2 z-[500] bg-white/90 backdrop-blur-sm border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
               <span className="text-xs font-semibold text-blue-600">{jobs.length} jobs</span>
               <span className="text-xs text-gray-500"> · tap markers</span>
+            </div>
+          )}
+          {/* Mobile: no jobs — widen + enrich */}
+          {hasSearched && !loading && jobs.length === 0 && (
+            <div className="lg:hidden absolute bottom-3 left-3 right-3 z-[500] bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl p-3 shadow-lg space-y-2">
+              <p className="text-xs text-gray-600 text-center">Try a larger radius or add coordinates to saved jobs in this area.</p>
+              <div className="flex flex-wrap gap-1.5 justify-center">
+                {RADIUS_PRESETS_KM.map((km) => (
+                  <button
+                    key={km}
+                    type="button"
+                    onClick={() => applyQuickRadius(km)}
+                    className="text-xs font-semibold px-2 py-1 rounded-lg border border-gray-200 bg-white hover:bg-blue-50"
+                  >
+                    {km} km
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={handleEnrichStored}
+                disabled={enrichLoading}
+                className="btn btn-secondary btn-sm w-full justify-center gap-1.5"
+              >
+                {enrichLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Enrich saved jobs (geo)
+              </button>
             </div>
           )}
         </div>

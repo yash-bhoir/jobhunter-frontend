@@ -125,7 +125,9 @@ function JobMarker({ job, index, isSelected, onClick, savedIds, onSaveToggle }) 
   ) return null;
 
   const position   = [coords[1], coords[0]];
-  const isSaved    = savedIds?.has(job._id) ?? false;
+  const sid        = String(job._id);
+  const isSaved =
+    (savedIds?.has(sid) ?? false) || job.status === 'saved';
   const [saving, setSaving] = useState(false);
   const markerRef  = useRef(null);
   const mountedRef = useRef(false);
@@ -135,21 +137,21 @@ function JobMarker({ job, index, isSelected, onClick, savedIds, onSaveToggle }) 
 
   const icon = makeLogoIcon(job, isSelected, mountedRef.current ? -1 : popDelay.current);
 
-  const handleClick = useCallback(() => onClick(job._id), [job._id, onClick]);
+  const handleClick = useCallback(() => onClick(sid), [sid, onClick]);
 
   const handleSave = useCallback(async (e) => {
     e.stopPropagation();
     setSaving(true);
     try {
       if (isSaved) {
-        await api.post(`/geo-jobs/${job._id}/unsave`);
-        onSaveToggle?.(job._id, false);
+        await api.post(`/geo-jobs/${sid}/unsave`);
+        onSaveToggle?.(sid, false);
       } else {
-        await api.post(`/geo-jobs/${job._id}/save`);
-        onSaveToggle?.(job._id, true);
+        await api.post(`/geo-jobs/${sid}/save`);
+        onSaveToggle?.(sid, true);
       }
     } catch { /* ignore */ } finally { setSaving(false); }
-  }, [isSaved, job._id, onSaveToggle]);
+  }, [isSaved, sid, onSaveToggle]);
 
   return (
     <Marker
@@ -186,6 +188,11 @@ function JobMarker({ job, index, isSelected, onClick, savedIds, onSaveToggle }) 
               <p style={{ fontSize: 12, color: '#2563eb', fontWeight: 600 }}>
                 {job.company}
               </p>
+              {typeof job.matchScore === 'number' && (
+                <p style={{ fontSize: 11, color: '#059669', fontWeight: 700, marginTop: 2 }}>
+                  ★ {job.matchScore}% match
+                </p>
+              )}
             </div>
           </div>
 
@@ -198,7 +205,6 @@ function JobMarker({ job, index, isSelected, onClick, savedIds, onSaveToggle }) 
           {job.jobType && (
             <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 6, textTransform: 'capitalize' }}>🕐 {job.jobType}</p>
           )}
-
           {job.tags?.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
               {job.tags.slice(0, 3).map(tag => (

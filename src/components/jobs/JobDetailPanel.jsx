@@ -396,11 +396,13 @@ export default function JobDetailPanel({
       logLinkedInRankingEvent(job._id, 'email_click', payload);
       return;
     }
-    const jobId = mode === 'geo' ? savedJobId : job._id;
-    if ((mode === 'results' || (mode === 'geo' && savedJobId)) && jobId) {
+    const geoRankId =
+      mode === 'geo' ? (job?._canonicalMapJob ? job._id : savedJobId) : null;
+    const jobId = mode === 'geo' ? geoRankId : job._id;
+    if ((mode === 'results' || (mode === 'geo' && jobId)) && jobId) {
       logJobRankingEvent(jobId, 'email_click', payload);
     }
-  }, [mode, job?._id, savedJobId]);
+  }, [mode, job?._id, job?._canonicalMapJob, savedJobId]);
 
   // Auto-fetch description for LinkedIn jobs that don't have one AND have a URL
   useEffect(() => {
@@ -425,32 +427,27 @@ export default function JobDetailPanel({
       .finally(() => setDescLoading(false));
   };
 
-  // Fetch fresh contacts on mount (Results and LinkedIn modes)
+  // Fetch fresh contacts on mount (Results; map sheet for stored canonical jobs)
   useEffect(() => {
-    if (mode === 'geo' || !job?._id) return;
-    const endpoint = mode === 'linkedin'
-      ? `/linkedin/jobs/${job._id}`
-      : `/jobs/${job._id}/contacts`;
-
-    if (mode === 'results') {
-      api.get(`/jobs/${job._id}/contacts`)
-        .then(({ data }) => {
-          const { hrContacts, employees, careerPageUrl, linkedinUrl, employeeSearch } = data.data;
-          const patch = {};
-          if (employees?.length > 0)  patch.employees = employees;
-          if (hrContacts?.length > 0) {
-            patch.allRecruiterContacts = hrContacts;
-            patch.recruiterEmail = hrContacts[0]?.email;
-            patch.recruiterName  = hrContacts[0]?.name;
-          }
-          if (careerPageUrl)  patch.careerPageUrl  = careerPageUrl;
-          if (linkedinUrl)    patch.linkedinUrl    = linkedinUrl;
-          if (employeeSearch) patch.employeeSearch = employeeSearch;
-          if (Object.keys(patch).length) updateJob(patch);
-        })
-        .catch(() => {});
-    }
-  }, [job?._id, mode]);
+    if (!job?._id) return;
+    if (mode !== 'results' && !(mode === 'geo' && job._canonicalMapJob)) return;
+    api.get(`/jobs/${job._id}/contacts`)
+      .then(({ data }) => {
+        const { hrContacts, employees, careerPageUrl, linkedinUrl, employeeSearch } = data.data;
+        const patch = {};
+        if (employees?.length > 0)  patch.employees = employees;
+        if (hrContacts?.length > 0) {
+          patch.allRecruiterContacts = hrContacts;
+          patch.recruiterEmail = hrContacts[0]?.email;
+          patch.recruiterName  = hrContacts[0]?.name;
+        }
+        if (careerPageUrl)  patch.careerPageUrl  = careerPageUrl;
+        if (linkedinUrl)    patch.linkedinUrl    = linkedinUrl;
+        if (employeeSearch) patch.employeeSearch = employeeSearch;
+        if (Object.keys(patch).length) updateJob(patch);
+      })
+      .catch(() => {});
+  }, [job?._id, job?._canonicalMapJob, mode]);
 
   // ── Helpers ───────────────────────────────────────────────────
   const updateJob = (patch) => {
@@ -551,8 +548,10 @@ export default function JobDetailPanel({
     try {
       let endpoint;
       if (mode === 'linkedin') endpoint = `/linkedin/jobs/${job._id}/status`;
-      else if (mode === 'geo')  endpoint = savedJobId ? `/jobs/${savedJobId}/status` : null;
-      else                      endpoint = `/jobs/${job._id}/status`;
+      else if (mode === 'geo') {
+        if (job._canonicalMapJob) endpoint = `/jobs/${job._id}/status`;
+        else endpoint = savedJobId ? `/jobs/${savedJobId}/status` : null;
+      } else                      endpoint = `/jobs/${job._id}/status`;
 
       if (!endpoint) { toast.error('Save this job first to track status'); return; }
       const prevStatus = job.status;
@@ -570,12 +569,13 @@ export default function JobDetailPanel({
         else if (status === 'found' && prevStatus === 'saved') {
           logJobRankingEvent(job._id, 'unsave', { source: 'status_tab' });
         } else if (status === 'rejected') logJobRankingEvent(job._id, 'hide', { source: 'status_tab' });
-      } else if (mode === 'geo' && savedJobId) {
-        if (status === 'applied') logJobRankingEvent(savedJobId, 'apply', { source: 'status_tab' });
-        else if (status === 'saved') logJobRankingEvent(savedJobId, 'save', { source: 'status_tab' });
+      } else if (mode === 'geo' && (savedJobId || job._canonicalMapJob)) {
+        const rid = job._canonicalMapJob ? job._id : savedJobId;
+        if (status === 'applied') logJobRankingEvent(rid, 'apply', { source: 'status_tab' });
+        else if (status === 'saved') logJobRankingEvent(rid, 'save', { source: 'status_tab' });
         else if (status === 'found' && prevStatus === 'saved') {
-          logJobRankingEvent(savedJobId, 'unsave', { source: 'status_tab' });
-        } else if (status === 'rejected') logJobRankingEvent(savedJobId, 'hide', { source: 'status_tab' });
+          logJobRankingEvent(rid, 'unsave', { source: 'status_tab' });
+        } else if (status === 'rejected') logJobRankingEvent(rid, 'hide', { source: 'status_tab' });
       }
       toast.success(`Marked as ${status}`);
     } catch { toast.error('Failed to update'); }
@@ -602,7 +602,11 @@ export default function JobDetailPanel({
   const checkLiveness = async () => {
     setLivenessLoading(true);
     try {
-      const { data } = await api.post(`/jobs/${job._id}/check-liveness`);
+      const jobIdForLiveness =
+        mode === 'geo' && !job._canonicalMapJob && savedJobId
+          ? savedJobId
+          : job._id;
+      const { data } = await api.post(`/jobs/${jobIdForLiveness}/check-liveness`);
       const liveness = data.data?.liveness;
       updateJob({ liveness });
       toast.success(
@@ -619,8 +623,10 @@ export default function JobDetailPanel({
     try {
       let endpoint;
       if (mode === 'linkedin') endpoint = `/linkedin/jobs/${job._id}/deep-evaluate`;
-      else if (mode === 'geo')  endpoint = savedJobId ? `/jobs/${savedJobId}/deep-evaluate` : null;
-      else                      endpoint = `/jobs/${job._id}/deep-evaluate`;
+      else if (mode === 'geo') {
+        if (job._canonicalMapJob) endpoint = `/jobs/${job._id}/deep-evaluate`;
+        else endpoint = savedJobId ? `/jobs/${savedJobId}/deep-evaluate` : null;
+      } else                      endpoint = `/jobs/${job._id}/deep-evaluate`;
 
       if (!endpoint) { toast.error('Save this job first to run Deep Evaluation'); setEvalLoading(false); return; }
       const { data } = await api.post(endpoint);
@@ -637,8 +643,10 @@ export default function JobDetailPanel({
     try {
       let endpoint;
       if (mode === 'linkedin') endpoint = `/linkedin/jobs/${job._id}/interview-prep`;
-      else if (mode === 'geo')  endpoint = savedJobId ? `/jobs/${savedJobId}/interview-prep` : null;
-      else                      endpoint = `/jobs/${job._id}/interview-prep`;
+      else if (mode === 'geo') {
+        if (job._canonicalMapJob) endpoint = `/jobs/${job._id}/interview-prep`;
+        else endpoint = savedJobId ? `/jobs/${savedJobId}/interview-prep` : null;
+      } else                      endpoint = `/jobs/${job._id}/interview-prep`;
 
       if (!endpoint) { toast.error('Save this job first to generate Interview Prep'); setPrepLoading(false); return; }
       const { data } = await api.post(endpoint);
@@ -684,8 +692,8 @@ export default function JobDetailPanel({
           section: rankingSection,
           recipientCount: allEmails.length,
         });
-      } else if (mode === 'geo' && savedJobId) {
-        logJobRankingEvent(savedJobId, 'email_click', {
+      } else if (mode === 'geo' && (savedJobId || job._canonicalMapJob)) {
+        logJobRankingEvent(job._canonicalMapJob ? job._id : savedJobId, 'email_click', {
           action: 'outreach_nav',
           section: rankingSection,
           recipientCount: allEmails.length,
@@ -710,13 +718,15 @@ export default function JobDetailPanel({
   const location   = typeof job.location === 'object' ? job.location?.address : job.location;
 
   // AI endpoint prefixes — based on mode
-  const aiJobId = mode === 'linkedin' ? job._id : (mode === 'geo' ? savedJobId : job._id);
+  const aiJobId = mode === 'linkedin'
+    ? job._id
+    : (mode === 'geo' ? (job._canonicalMapJob ? job._id : savedJobId) : job._id);
   const aiPrefix = mode === 'linkedin' ? '/linkedin/jobs' : '/jobs';
   const explainEndpoint = aiJobId ? `${aiPrefix}/${aiJobId}/explain`  : null;
   const companyEndpoint = aiJobId ? `${aiPrefix}/${aiJobId}/company`  : null;
 
-  // For geo mode: AI features require the job to be saved first
-  const geoAiLocked = mode === 'geo' && !savedJobId;
+  // Geo-only API jobs: AI/status need a linked Job doc first. Stored canonical jobs already are Job docs.
+  const geoAiLocked = mode === 'geo' && !job._canonicalMapJob && !savedJobId;
 
   const hrEmails = job.allRecruiterContacts?.length > 0
     ? job.allRecruiterContacts
@@ -733,8 +743,7 @@ export default function JobDetailPanel({
   const statusList   = mode === 'linkedin' ? LINKEDIN_STATUSES   : RESULTS_STATUSES;
   const statusLabels = mode === 'linkedin' ? LINKEDIN_STATUS_LABELS : JOB_STATUS_LABELS;
 
-  // geo mode status banner
-  const geoStatusLocked = mode === 'geo' && !savedJobId;
+  const geoStatusLocked = mode === 'geo' && !job._canonicalMapJob && !savedJobId;
 
   if (!job) return null;
 
@@ -773,7 +782,7 @@ export default function JobDetailPanel({
 
         {/* Meta badges */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
-          {job.matchScore > 0 && (
+          {(Number.isFinite(job.matchScore) && (mode === 'geo' || job.matchScore > 0)) && (
             <span className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold', SCORE_STYLE(job.matchScore))}>
               <Star className="w-3 h-3" /> {job.matchScore}% match
             </span>
@@ -906,14 +915,16 @@ export default function JobDetailPanel({
                   if (!applyUrl || applyUrl === '#') return;
                   if (mode === 'results' && job?._id) logJobRankingEvent(job._id, 'apply', { source: 'apply_cta' });
                   if (mode === 'linkedin' && job?._id) logLinkedInRankingEvent(job._id, 'apply', { source: 'apply_cta' });
-                  if (mode === 'geo' && savedJobId) logJobRankingEvent(savedJobId, 'apply', { source: 'apply_cta' });
+                  if (mode === 'geo' && (savedJobId || job._canonicalMapJob)) {
+                    logJobRankingEvent(job._canonicalMapJob ? job._id : savedJobId, 'apply', { source: 'apply_cta' });
+                  }
                 }}
                 className="btn btn-primary flex-1 justify-center"
               >
                 <ArrowUpRight className="w-4 h-4" />
                 {mode === 'linkedin' ? 'View on LinkedIn' : 'Apply Now'}
               </a>
-              {mode === 'results' && (
+              {(mode === 'results' || (mode === 'geo' && job._canonicalMapJob)) && (
                 <button
                   onClick={checkLiveness}
                   disabled={livenessLoading}
@@ -1030,7 +1041,7 @@ export default function JobDetailPanel({
                       : <><Search className="w-3.5 h-3.5" /> Find HR Emails</>}
                     <span className="ml-auto text-[10px] bg-gray-200 text-gray-600 font-semibold px-1.5 py-0.5 rounded-full">15 cr</span>
                   </button>
-                  {mode === 'results' && (
+                  {(mode === 'results' || (mode === 'geo' && job._canonicalMapJob)) && (
                     <button onClick={findEmployees} disabled={empLoading}
                       className="btn btn-secondary btn-sm w-full justify-center">
                       {empLoading

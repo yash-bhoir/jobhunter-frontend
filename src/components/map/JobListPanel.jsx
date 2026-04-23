@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, forwardRef } from 'react';
 import {
   ChevronLeft, ChevronRight, Briefcase,
-  MapPin, DollarSign, Loader2, AlertCircle, Bookmark, BookmarkCheck, Mail,
+  MapPin, DollarSign, Loader2, AlertCircle, Bookmark, BookmarkCheck, Mail, Sparkles, Star,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@utils/helpers';
@@ -16,10 +16,16 @@ const TYPE_COLORS = {
   contract:    'bg-orange-100 text-orange-700',
 };
 
+const MAP_SCORE_STYLE = (s) =>
+  s >= 75 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+  s >= 50 ? 'bg-amber-50 text-amber-700 border border-amber-200'       :
+            'bg-gray-100 text-gray-500 border border-gray-200';
+
 // ── Single job card ───────────────────────────────────────────────
 const JobCard = memo(forwardRef(function JobCard({ job, isSelected, onClick, savedIds, onSaveToggle, savedJobDocIds }, ref) {
-  const isSaved   = savedIds.has(job._id);
-  const jobDocId  = savedJobDocIds?.[job._id] || null;
+  const sid       = String(job._id);
+  const isSaved   = savedIds.has(sid) || job.status === 'saved';
+  const jobDocId  = savedJobDocIds?.[sid] || null;
   const [saving, setSaving] = useState(false);
   const [outreachOpen, setOutreachOpen] = useState(false);
 
@@ -28,18 +34,18 @@ const JobCard = memo(forwardRef(function JobCard({ job, isSelected, onClick, sav
     setSaving(true);
     try {
       if (isSaved) {
-        await api.post(`/geo-jobs/${job._id}/unsave`);
-        onSaveToggle(job._id, false);
+        await api.post(`/geo-jobs/${sid}/unsave`);
+        onSaveToggle(sid, false);
       } else {
-        await api.post(`/geo-jobs/${job._id}/save`);
-        onSaveToggle(job._id, true);
+        await api.post(`/geo-jobs/${sid}/save`);
+        onSaveToggle(sid, true);
       }
     } catch {
       // silently ignore — toast would need context here
     } finally {
       setSaving(false);
     }
-  }, [isSaved, job._id, onSaveToggle]);
+  }, [isSaved, sid, onSaveToggle]);
 
   return (
     <motion.div
@@ -67,6 +73,18 @@ const JobCard = memo(forwardRef(function JobCard({ job, isSelected, onClick, sav
         </p>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {typeof job.matchScore === 'number' && (
+            <span
+              title="Match vs your profile and this map search"
+              className={cn(
+                'inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                MAP_SCORE_STYLE(job.matchScore)
+              )}
+            >
+              <Star className="w-2.5 h-2.5" />
+              {job.matchScore}%
+            </span>
+          )}
           {job.jobType && (
             <span className={cn(
               'text-xs px-1.5 py-0.5 rounded-full capitalize font-medium',
@@ -107,7 +125,6 @@ const JobCard = memo(forwardRef(function JobCard({ job, isSelected, onClick, sav
           <span className="text-xs text-gray-500 truncate">{job.location.address}</span>
         </div>
       )}
-
       {/* Salary */}
       {job.salaryDisplay && (
         <div className="flex items-center gap-1 mb-2">
@@ -159,6 +176,12 @@ function JobListPanel({
   jobs, loading, error, hasSearched,
   selectedJobId, onJobClick, open, onToggle,
   savedIds, onSaveToggle, savedJobDocIds,
+  onEnrichStored,
+  enrichLoading,
+  /** From API meta — area for the lat/lng actually searched (fixes “My Location” vs map mismatch). */
+  searchAreaLabel,
+  /** Optional `/geo-jobs/nearby` meta — DB counts vs what you see after filters. */
+  mapCountMeta,
 }) {
   return (
     <div className={cn(
@@ -193,6 +216,42 @@ function JobListPanel({
                 </span>
               )}
             </div>
+            {searchAreaLabel ? (
+              <p className="text-xs text-gray-500 mt-0.5 font-medium truncate" title={searchAreaLabel}>
+                Near: {searchAreaLabel}
+              </p>
+            ) : null}
+            {mapCountMeta && typeof mapCountMeta.geoJobsInRadiusAllTitles === 'number' && (
+              <p
+                className="text-[10px] text-gray-500 mt-1.5 leading-snug border-t border-gray-100 pt-1.5"
+                title={
+                  [
+                    mapCountMeta.titleQuery && `Title query: "${mapCountMeta.titleQuery}"`,
+                    mapCountMeta.titleMongoPattern && `Mongo title regex: ${mapCountMeta.titleMongoPattern}`,
+                    `GeoJob docs in circle (any title): ${mapCountMeta.geoJobsInRadiusAllTitles}`,
+                    `GeoJob docs title match: ${mapCountMeta.cachedGeoInRadius}`,
+                    `GeoJob $near total (uncapped): ${mapCountMeta.liveGeoJobsInRadiusTotal}`,
+                    `Returned rows this response (capped): ${mapCountMeta.live}`,
+                    `Stored jobs in radius: ${mapCountMeta.stored}`,
+                    `Merged before address/region filter: ${mapCountMeta.mergedBeforeMapListingFilter}`,
+                    `Removed by map listing rules: ${mapCountMeta.mapListingFilterRemoved ?? 0}`,
+                  ].filter(Boolean).join('\n')
+                }
+              >
+                <span className="font-semibold text-gray-600">API / DB counts:</span>{' '}
+                {mapCountMeta.geoJobsInRadiusAllTitles} in radius (cache)
+                {mapCountMeta.titleQuery != null && mapCountMeta.titleQuery !== '' && (
+                  <> · {mapCountMeta.cachedGeoInRadius} title match</>
+                )}
+                {' · '}
+                {mapCountMeta.liveGeoJobsInRadiusTotal} near (DB)
+                {Number(mapCountMeta.mapListingFilterRemoved) > 0 && (
+                  <> · −{mapCountMeta.mapListingFilterRemoved} region/address</>
+                )}
+                {' → '}
+                <span className="font-semibold text-blue-700">{jobs.length} on map</span>
+              </p>
+            )}
             <p className="text-xs text-gray-400 mt-0.5">
               Click a job or map marker to view details
             </p>
@@ -219,14 +278,25 @@ function JobListPanel({
 
             {/* No results */}
             {!loading && !error && hasSearched && jobs.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-14 gap-3 text-center px-4">
+              <div className="flex flex-col items-center justify-center py-10 gap-3 text-center px-4">
                 <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
                   <MapPin className="w-6 h-6 text-gray-400" />
                 </div>
                 <p className="text-sm font-semibold text-gray-600">No jobs found in this area</p>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  Try increasing the radius or clicking a different location on the map
+                  Widen radius, turn on <strong>Include remote</strong>, or add coordinates to saved jobs from search results.
                 </p>
+                {onEnrichStored && (
+                  <button
+                    type="button"
+                    onClick={onEnrichStored}
+                    disabled={enrichLoading}
+                    className="btn btn-secondary btn-sm gap-1.5 justify-center max-w-[240px]"
+                  >
+                    {enrichLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Enrich saved jobs (geo)
+                  </button>
+                )}
               </div>
             )}
 
@@ -248,7 +318,7 @@ function JobListPanel({
                 <JobCard
                   key={job._id}
                   job={job}
-                  isSelected={selectedJobId === job._id}
+                  isSelected={String(selectedJobId) === String(job._id)}
                   onClick={onJobClick}
                   savedIds={savedIds}
                   onSaveToggle={onSaveToggle}

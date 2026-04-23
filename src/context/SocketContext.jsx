@@ -17,9 +17,10 @@ export function SocketProvider({ children }) {
       return;
     }
 
-    const token  = localStorage.getItem('accessToken');
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
-      auth:             { token },
+    const envUrl = import.meta.env.VITE_SOCKET_URL?.trim();
+    const socketUrl = envUrl || window.location.origin;
+    const socket = io(socketUrl, {
+      withCredentials: true,
       transports:       ['websocket'],
       reconnection:     true,
       reconnectionAttempts: 5,

@@ -2,24 +2,17 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 
 export const api = axios.create({
-  baseURL:         import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1',
+  baseURL:         import.meta.env.VITE_API_URL || '/api/v1',
   withCredentials: true,
   timeout:         30000,
-});
-
-// Attach token to every request
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
 });
 
 // Handle responses
 let isRefreshing  = false;
 let failedQueue   = [];
 
-const processQueue = (error, token = null) => {
-  failedQueue.forEach(p => error ? p.reject(error) : p.resolve(token));
+const processQueue = (error) => {
+  failedQueue.forEach(p => error ? p.reject(error) : p.resolve());
   failedQueue = [];
 };
 
@@ -33,33 +26,28 @@ api.interceptors.response.use(
     const isGmailAuthError = error.response?.data?.code === 'GMAIL_TOKEN_EXPIRED' ||
                              error.response?.data?.code === 'GMAIL_NOT_CONNECTED';
 
-    if (error.response?.status === 401 && !original._retry && !original.url?.includes('/auth/') && !isGmailAuthError) {
+    if (
+      error.response?.status === 401 &&
+      !original._retry &&
+      !original._skipAuthRefresh &&
+      !original.url?.includes('/auth/') &&
+      !isGmailAuthError
+    ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
-        }).then(token => {
-          original.headers.Authorization = `Bearer ${token}`;
-          return api(original);
-        });
+        }).then(() => api(original));
       }
 
       original._retry = true;
       isRefreshing    = true;
 
       try {
-        const { data } = await axios.post(
-          `${import.meta.env.VITE_API_URL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-        const newToken = data.data.accessToken;
-        localStorage.setItem('accessToken', newToken);
-        processQueue(null, newToken);
-        original.headers.Authorization = `Bearer ${newToken}`;
+        await api.post('/auth/refresh', {}, { _skipAuthRefresh: true });
+        processQueue(null);
         return api(original);
       } catch (refreshErr) {
-        processQueue(refreshErr, null);
-        localStorage.removeItem('accessToken');
+        processQueue(refreshErr);
         window.location.href = '/login';
         return Promise.reject(refreshErr);
       } finally {
