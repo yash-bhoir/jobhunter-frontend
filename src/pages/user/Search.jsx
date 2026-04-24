@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -110,6 +110,40 @@ export default function Search() {
   useEffect(() => {
     platformsRef.current = platforms;
   }, [platforms]);
+
+  const selectedPlatformList = useMemo(
+    () => userPlatforms.filter((p) => platforms.includes(p.id)),
+    [userPlatforms, platforms],
+  );
+
+  /** Live stats for the scanning card (socket `search:progress` updates). */
+  const progressStats = useMemo(() => {
+    let jobsSoFar = 0;
+    let finished = 0;
+    let failed = 0;
+    let running = 0;
+    let waiting = 0;
+    for (const { id } of selectedPlatformList) {
+      const row = progress[id];
+      if (!row) {
+        waiting += 1;
+        continue;
+      }
+      if (row.status === 'error') {
+        failed += 1;
+        finished += 1;
+        continue;
+      }
+      if (isTerminalSearchProgress(row.status)) {
+        finished += 1;
+        jobsSoFar += Math.max(0, Number(row.found) || 0);
+      } else {
+        running += 1;
+      }
+    }
+    const n = selectedPlatformList.length;
+    return { jobsSoFar, finished, failed, running, waiting, n };
+  }, [progress, selectedPlatformList]);
 
   const RADIUS_OPTIONS = [
     { label: 'Any', value: 0 },
@@ -741,13 +775,31 @@ export default function Search() {
                   <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
                     <Zap className="w-4 h-4 text-blue-600 animate-pulse" />
                   </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">Scanning platforms…</p>
-                    <p className="text-xs text-gray-400">Takes 15–30 seconds</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">Scanning job sources…</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {progressStats.n === 0
+                        ? 'Select platforms above'
+                        : (
+                          <>
+                            <span className="font-medium text-gray-700">{progressStats.jobsSoFar}</span>
+                            {' '}raw jobs so far ·{' '}
+                            <span className="font-medium text-gray-700">{progressStats.finished}/{progressStats.n}</span>
+                            {' '}sources done
+                            {progressStats.failed > 0 && (
+                              <span className="text-red-500"> · {progressStats.failed} failed</span>
+                            )}
+                            {progressStats.running > 0 && (
+                              <span className="text-blue-600"> · {progressStats.running} in flight</span>
+                            )}
+                          </>
+                          )}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Heavy boards (ATS) can take up to ~30s · totals update live</p>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {userPlatforms.filter(p => platforms.includes(p.id)).map((platform, i) => {
+                  {selectedPlatformList.map((platform, i) => {
                     const p = progress[platform.id];
                     const status = !p
                       ? 'waiting'
@@ -756,19 +808,62 @@ export default function Search() {
                         : p.status === 'error'
                           ? 'error'
                           : 'running';
+                    const foundN = Math.max(0, Number(p?.found) || 0);
+                    const errHint = p?.error && String(p.error).length > 48
+                      ? `${String(p.error).slice(0, 48)}…`
+                      : (p?.error || '');
                     const doneLabel = () => {
-                      if (!p) return '—';
+                      if (!p) return 'Waiting…';
                       if (p.sourceCluster) return '✓ Shared pool';
-                      if (p.status === 'cached') return `✓ ${p.found} cached`;
-                      if (p.status === 'skipped') return '— Skipped';
-                      return `✓ ${p.found} jobs`;
+                      if (p.status === 'cached') return foundN ? `✓ ${foundN} cached` : '✓ 0 cached';
+                      if (p.status === 'skipped') return 'Skipped';
+                      if (foundN === 0) return '0 jobs';
+                      return `✓ ${foundN} jobs`;
                     };
+                    const rowDot =
+                      status === 'error'
+                        ? 'bg-red-400'
+                        : status === 'done' && p?.status !== 'error' && foundN > 0
+                          ? 'bg-emerald-500'
+                          : status === 'done'
+                            ? 'bg-amber-400'
+                            : status === 'running'
+                              ? 'bg-blue-500 animate-pulse'
+                              : 'bg-gray-200';
+                    const rightClass =
+                      status === 'error'
+                        ? 'text-red-500'
+                        : status === 'done' && p?.status !== 'error' && foundN > 0
+                          ? 'text-emerald-600'
+                          : status === 'done'
+                            ? 'text-amber-600'
+                            : status === 'running'
+                              ? 'text-blue-600'
+                              : 'text-gray-300';
                     return (
-                      <motion.div key={platform.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3">
-                        <span className={cn('w-2 h-2 rounded-full flex-shrink-0', status === 'done' ? 'bg-emerald-500' : status === 'error' ? 'bg-red-400' : status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-gray-200')} />
-                        <span className="text-sm text-gray-700 flex-1">{platform.name}</span>
-                        <span className={cn('text-xs font-medium', status === 'done' ? 'text-emerald-600' : status === 'error' ? 'text-red-400' : 'text-gray-300')}>
-                          {status === 'done' ? doneLabel() : status === 'error' ? '✗ Failed' : status === 'running' ? 'Searching…' : '—'}
+                      <motion.div
+                        key={platform.id}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.04 }}
+                        className="flex items-start gap-3"
+                        title={status === 'error' && p?.error ? String(p.error) : undefined}
+                      >
+                        <span className={cn('w-2 h-2 rounded-full flex-shrink-0 mt-1.5', rowDot)} />
+                        <span className="text-sm text-gray-700 flex-1 min-w-0">{platform.name}</span>
+                        <span className={cn('text-xs font-medium text-right max-w-[55%]', rightClass)}>
+                          {status === 'error'
+                            ? (
+                              <span className="block">
+                                <span className="block">✗ Failed</span>
+                                {errHint && <span className="block font-normal text-red-400/90 normal-case mt-0.5">{errHint}</span>}
+                              </span>
+                              )
+                            : status === 'done'
+                              ? doneLabel()
+                              : status === 'running'
+                                ? 'Searching…'
+                                : '—'}
                         </span>
                       </motion.div>
                     );

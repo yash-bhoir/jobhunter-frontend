@@ -7,19 +7,22 @@ const SocketContext = createContext(null);
 export function SocketProvider({ children }) {
   const { user }    = useAuthContext();
   const socketRef   = useRef(null);
+  /** Real socket instance in state so consumers re-render and attach listeners as soon as `io()` exists (not only after `connect`). */
+  const [socket, setSocket]     = useState(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!user) {
       socketRef.current?.disconnect();
       socketRef.current = null;
+      setSocket(null);
       setConnected(false);
       return;
     }
 
     const envUrl = import.meta.env.VITE_SOCKET_URL?.trim();
     const socketUrl = envUrl || window.location.origin;
-    const socket = io(socketUrl, {
+    const s = io(socketUrl, {
       withCredentials: true,
       // Allow long-polling first — websocket-only often fails or reconnect-loops behind Vite’s dev proxy.
       transports:           ['polling', 'websocket'],
@@ -29,15 +32,22 @@ export function SocketProvider({ children }) {
       reconnectionDelayMax:   8000,
     });
 
-    socket.on('connect',    () => { setConnected(true);  socket.emit('join', user._id); });
-    socket.on('disconnect', () => setConnected(false));
+    socketRef.current = s;
+    setSocket(s);
 
-    socketRef.current = socket;
-    return () => { socket.disconnect(); setConnected(false); };
+    s.on('connect',    () => { setConnected(true);  s.emit('join', user._id); });
+    s.on('disconnect', () => setConnected(false));
+
+    return () => {
+      s.disconnect();
+      socketRef.current = null;
+      setSocket(null);
+      setConnected(false);
+    };
   }, [user]);
 
   return (
-    <SocketContext.Provider value={{ socket: socketRef.current, connected }}>
+    <SocketContext.Provider value={{ socket, connected }}>
       {children}
     </SocketContext.Provider>
   );

@@ -11,6 +11,8 @@ import { useAuth }  from '@hooks/useAuth';
 import { useToast } from '@hooks/useToast';
 import { cn }       from '@utils/helpers';
 import { Badge, Card, CardSurface } from '@components/ui';
+import ResumeTemplateSelector  from '@components/resume/ResumeTemplateSelector';
+import ResumeOptimizeResult    from '@components/resume/ResumeOptimizeResult';
 
 const draftKey = (company, email) => `${company}|||${(email || '').toLowerCase()}`;
 
@@ -55,6 +57,9 @@ export default function OutreachManager() {
   const [showJdPaste,     setShowJdPaste]     = useState({}); // company -> bool
   const [enhancing,       setEnhancing]       = useState({}); // company -> bool
   const [composeMode,     setComposeMode]     = useState({}); // company -> 'generated' | 'manual'
+  // null = "keep my format"; string = selected template _id
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState({});  // company -> bool
 
   const isPro = user?.plan === 'pro' || user?.plan === 'team';
 
@@ -364,6 +369,7 @@ export default function OutreachManager() {
         jobTitle:       job.title,
         jobDescription: jd,
         company,
+        templateId:     selectedTemplateId || undefined,
       };
       if (selectedResumeId) body.resumeId = selectedResumeId;
       const { data: res } = await api.post('/outreach/optimize-resume', body);
@@ -1056,210 +1062,55 @@ export default function OutreachManager() {
 
                       {/* Row 2 (conditional): Pro resume optimise / ATS status */}
                       {(isPro && hasResume && !optimizedResumes[company.company]) && (
-                        <div className="px-3 py-1.5 border-t border-gray-200 flex items-center gap-1.5 flex-wrap">
-                          <button
-                            onClick={() => optimizeResume(company.company)}
-                            disabled={optimizing[company.company]}
-                            className="btn btn-sm bg-purple-100 text-purple-700 hover:bg-purple-200 border-purple-200 flex items-center gap-1"
-                          >
-                            {optimizing[company.company]
-                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Optimizing...</>
-                              : <><Wand2 className="w-3.5 h-3.5" /> Optimize Resume <span className="text-purple-500 text-xs">3 cr</span></>
-                            }
-                          </button>
+                        <div className="px-3 py-2 border-t border-gray-200 space-y-2">
+                          {/* Template picker toggle */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => optimizeResume(company.company)}
+                              disabled={optimizing[company.company]}
+                              className="btn btn-sm bg-purple-100 text-purple-700 hover:bg-purple-200 border-purple-200 flex items-center gap-1"
+                            >
+                              {optimizing[company.company]
+                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Optimizing...</>
+                                : <><Wand2 className="w-3.5 h-3.5" /> Optimize Resume <span className="text-purple-500 text-xs">3 cr</span></>
+                              }
+                            </button>
+                            <button
+                              onClick={() => setShowTemplatePicker(p => ({ ...p, [company.company]: !p[company.company] }))}
+                              className="text-xs text-gray-500 hover:text-purple-600 underline underline-offset-2"
+                            >
+                              {selectedTemplateId ? 'Template selected ✓' : 'Choose template'}
+                            </button>
+                          </div>
+                          {/* Inline template picker */}
+                          {showTemplatePicker[company.company] && (
+                            <div className="pt-1">
+                              <ResumeTemplateSelector
+                                selectedId={selectedTemplateId}
+                                onSelect={id => {
+                                  setSelectedTemplateId(id);
+                                  setShowTemplatePicker(p => ({ ...p, [company.company]: false }));
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                       {optimizedResumes[company.company] && (
-                        <div className="px-3 py-1.5 border-t border-gray-200 flex items-center gap-2">
-                          <Badge variant="purple" className="flex items-center gap-1 text-xs">
-                            <Wand2 className="h-3 w-3 shrink-0" aria-hidden /> ATS Optimized
-                          </Badge>
-                          <button
-                            onClick={() => setShowComparison(p => ({ ...p, [company.company]: !p[company.company] }))}
-                            className="text-xs text-purple-600 hover:text-purple-800 underline underline-offset-2"
-                          >
-                            {showComparison[company.company] ? 'Hide' : 'View'} comparison
-                          </button>
-                        </div>
+                        <Badge variant="purple" className="flex items-center gap-1 text-xs mx-3 my-1 w-fit">
+                          <Wand2 className="h-3 w-3 shrink-0" aria-hidden /> ATS Optimized
+                        </Badge>
                       )}
                     </div>
 
                     {/* Resume optimization result panel */}
-                    {optimizedResumes[company.company] && (() => {
-                      const opt    = optimizedResumes[company.company];
-                      const before = opt.atsScoreBefore || 0;
-                      const after  = opt.atsScoreAfter  || 0;
-                      const gain   = after - before;
-
-                      const downloadFile = (b64, filename, mime) => {
-                        const bytes = atob(b64);
-                        const arr   = new Uint8Array(bytes.length);
-                        for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-                        const blob = new Blob([arr], { type: mime });
-                        const url  = URL.createObjectURL(blob);
-                        const a    = document.createElement('a');
-                        a.href = url; a.download = filename; a.click();
-                        URL.revokeObjectURL(url);
-                      };
-
-                      const downloadPdf  = () => opt.resumeBuffer     && downloadFile(opt.resumeBuffer,     opt.filename     || 'optimized-resume.pdf',  'application/pdf');
-                      const downloadDocx = () => opt.resumeDocxBuffer && downloadFile(opt.resumeDocxBuffer, opt.docxFilename || 'optimized-resume.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-
-                      return (
-                        <div className="border-b border-purple-100">
-                          {/* Score + actions bar */}
-                          <div className="px-3 py-2 bg-purple-50 border-b border-purple-100 flex items-center justify-between gap-4 flex-wrap">
-                            <div className="flex items-center gap-3">
-                              <div className="text-center">
-                                <div className="text-xs text-gray-400 mb-0.5">Before</div>
-                                <div className="flex items-center gap-1">
-                                  <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                    <div className="h-full bg-red-400 rounded-full" style={{ width: `${before}%` }} />
-                                  </div>
-                                  <span className="text-xs font-bold text-gray-600">{before}%</span>
-                                </div>
-                              </div>
-                              <span className="text-gray-300">→</span>
-                              <div className="text-center">
-                                <div className="text-xs text-gray-400 mb-0.5">After</div>
-                                <div className="flex items-center gap-1">
-                                  <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${after}%` }} />
-                                  </div>
-                                  <span className="text-xs font-bold text-green-600">{after}%</span>
-                                </div>
-                              </div>
-                              {gain > 0 && (
-                                <span className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 rounded px-2 py-0.5">
-                                  +{gain}% ATS
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={downloadPdf}
-                                className="btn btn-sm bg-green-600 text-white hover:bg-green-700 flex items-center gap-1"
-                                title="Download optimized resume PDF"
-                              >
-                                <Download className="w-3.5 h-3.5" /> Save PDF
-                              </button>
-                              {opt.hasDocx && opt.resumeDocxBuffer && (
-                                <button
-                                  onClick={downloadDocx}
-                                  className="btn btn-sm bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1"
-                                  title="Download exact-layout DOCX (upload your .docx in Profile to enable)"
-                                >
-                                  <FileText className="w-3.5 h-3.5" /> Save DOCX
-                                </button>
-                              )}
-                              <button
-                                onClick={() => setShowComparison(p => ({ ...p, [company.company]: !p[company.company] }))}
-                                className="btn btn-sm btn-secondary"
-                              >
-                                {showComparison[company.company] ? 'Hide' : 'View'} Changes
-                              </button>
-                              <button
-                                onClick={() => setOptimizedResumes(p => { const n = {...p}; delete n[company.company]; return n; })}
-                                className="text-xs text-gray-400 hover:text-red-500"
-                              >
-                                Reset
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Added keywords */}
-                          {opt.keywordsAdded?.length > 0 && (
-                            <div className="px-3 py-2 bg-green-50 border-b border-green-100">
-                              <p className="text-xs font-semibold text-green-800 mb-1.5">
-                                Keywords Added ({opt.keywordsAdded.length})
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {opt.keywordsAdded.map((kw, i) => (
-                                  <Badge key={i} variant="green" className="text-xs">
-                                    + {kw}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Layout preservation notice */}
-                          <div className="px-3 py-1.5 bg-green-50 border-b border-green-100 flex items-center gap-2">
-                            <FileText className="w-3 h-3 text-green-600 flex-shrink-0" />
-                            <p className="text-xs text-green-700">
-                              <strong>Optimized resume ready</strong> — all keyword changes applied.
-                              {opt.hasDocx
-                                ? <> Save as <strong>DOCX</strong> (exact layout preserved) or PDF.</>
-                                : <> Upload your <strong>.docx</strong> in Profile → Resume for exact-layout output.</>
-                              }
-                            </p>
-                          </div>
-
-                          {/* Changes list modal */}
-                          {showComparison[company.company] && (
-                            <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setShowComparison(p => ({ ...p, [company.company]: false })); }}>
-                              <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col" style={{ maxHeight: '85vh' }}>
-                                {/* Modal header */}
-                                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
-                                  <div className="flex items-center gap-3">
-                                    <Wand2 className="w-5 h-5 text-purple-600" />
-                                    <div>
-                                      <h3 className="font-semibold text-gray-900">ATS Changes — {company.company}</h3>
-                                      <p className="text-xs text-gray-500">
-                                        ATS score: {before}% → <strong className="text-green-600">{after}%</strong>
-                                        {gain > 0 && <span className="ml-1 text-green-600 font-semibold">(+{gain}% improvement)</span>}
-                                        <span className="ml-2 text-green-600">· Keywords applied</span>
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <button onClick={downloadPdf} className="btn btn-sm bg-green-600 text-white hover:bg-green-700 flex items-center gap-1">
-                                      <Download className="w-4 h-4" /> Save PDF
-                                    </button>
-                                    {opt.hasDocx && opt.resumeDocxBuffer && (
-                                      <button onClick={downloadDocx} className="btn btn-sm bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1">
-                                        <FileText className="w-4 h-4" /> Save DOCX
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={() => setShowComparison(p => ({ ...p, [company.company]: false }))}
-                                      className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 text-lg"
-                                    >
-                                      ×
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Diff list */}
-                                <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                                  {opt.textReplacements?.length > 0 ? (
-                                    <>
-                                      <p className="text-xs text-gray-500 mb-3">
-                                        {opt.textReplacements.length} change{opt.textReplacements.length > 1 ? 's' : ''} applied to your resume:
-                                      </p>
-                                      {opt.textReplacements.map((r, i) => (
-                                        <div key={i} className="rounded-lg border border-gray-200 overflow-hidden text-sm">
-                                          <div className="flex items-start gap-2 px-3 py-2 bg-red-50 border-b border-red-100">
-                                            <span className="text-red-500 font-bold mt-0.5 flex-shrink-0">−</span>
-                                            <span className="text-red-700 line-through">{r.find}</span>
-                                          </div>
-                                          <div className="flex items-start gap-2 px-3 py-2 bg-green-50">
-                                            <span className="text-green-600 font-bold mt-0.5 flex-shrink-0">+</span>
-                                            <span className="text-green-800 font-medium">{r.replace}</span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </>
-                                  ) : (
-                                    <p className="text-sm text-gray-500 text-center py-8">No specific text changes to show.</p>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {optimizedResumes[company.company] && (
+                      <ResumeOptimizeResult
+                        opt={optimizedResumes[company.company]}
+                        company={company.company}
+                        onReset={() => setOptimizedResumes(p => { const n = {...p}; delete n[company.company]; return n; })}
+                      />
+                    )}
 
                     <div className="p-3 space-y-2">
                       {!currentDraft(company.company) && (

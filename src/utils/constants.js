@@ -65,9 +65,9 @@ export const PLATFORMS = [
   { id: 'themuse',       name: 'The Muse',      note: 'Culture-focused jobs',       proOnly: false },
   { id: 'careerjet',     name: 'CareerJet',     note: 'Global job aggregator',      proOnly: false },
   { id: 'linkedin-rss',  name: 'LinkedIn',      note: 'Direct LinkedIn listings',   proOnly: false },
-  { id: 'indeed-rss',    name: 'Indeed',        note: "World's largest job board",  proOnly: false },
-  { id: 'naukri',        name: 'Naukri',        note: "India's #1 job portal",      proOnly: false },
-  { id: 'wellfound',     name: 'Wellfound',     note: 'Startup & equity roles',     proOnly: false },
+  { id: 'indeed-rss',    name: 'Indeed',        note: 'RSS often blocked; with SerpAPI key we show Indeed-labeled rows from Google Jobs', proOnly: false },
+  { id: 'naukri',        name: 'Naukri',        note: 'Use APIFY_TOKEN + Apify actor (paid) — direct API blocked', proOnly: false },
+  { id: 'wellfound',     name: 'Wellfound',     note: 'Use APIFY_TOKEN + Apify actor (paid) — DataDome blocks direct', proOnly: false },
   { id: 'jooble',        name: 'Jooble',        note: '71 countries aggregator',    proOnly: false },
   { id: 'findwork',      name: 'FindWork',      note: 'Tech & startup jobs',        proOnly: false },
   // ── Direct ATS platforms (zero cost — public APIs) ────────────────
@@ -76,7 +76,7 @@ export const PLATFORMS = [
   { id: 'ashby',         name: 'Ashby',         note: 'Direct ATS — Series A/B',    proOnly: false },
   { id: 'recruitee',     name: 'Recruitee',     note: 'Direct ATS — EU companies',  proOnly: false },
   // ── Admin-enabled paid platforms ─────────────────────────────────
-  { id: 'serpapi',       name: 'Google Jobs',   note: 'Aggregates 50+ boards',      proOnly: true, adminOnly: true },
+  { id: 'serpapi',       name: 'Google Jobs',   note: 'Aggregates 50+ boards',      proOnly: true, adminOnly: false },
   { id: 'reed',          name: 'Reed.co.uk',    note: 'UK job board',               proOnly: true, adminOnly: true },
 ];
 
