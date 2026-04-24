@@ -48,7 +48,6 @@ export function AuthProvider({ children }) {
       const { data } = await api.post('/auth/login', credentials);
       // Admin 2-FA: backend returns { otpRequired: true, userId } — no token yet
       if (data.data?.otpRequired) return data.data;
-      if (data.data?.accessToken) setAccessToken(data.data.accessToken);
       clearAuthRefreshCircuit();
       setUser(data.data.user);
       return data.data;

@@ -4,7 +4,7 @@ import { Loader2, Briefcase } from 'lucide-react';
 import { useToast } from '@hooks/useToast';
 import { useAuth } from '@hooks/useAuth';
 import { api } from '@utils/axios';
-import { getAccessToken, setAccessToken } from '@utils/accessToken';
+import { clearAccessToken } from '@utils/accessToken';
 
 /**
  * One-time server codes must only be POSTed once. React 18 Strict Mode runs effects twice;
@@ -51,16 +51,16 @@ export default function OAuthCallback() {
         const { data } = await postOAuthExchangeOnce(code);
         if (cancelledRef.current) return;
 
-        setAccessToken(data.data.accessToken);
+        // Tokens are now in httpOnly cookies — clear any stale sessionStorage token
+        // so the middleware reads from cookie (not a stale Bearer header).
+        clearAccessToken();
         window.history.replaceState({}, document.title, '/auth/callback');
-        loginWithToken(data.data.user, data.data.accessToken);
+        loginWithToken(data.data.user);
         oauthExchangeInflight.delete(code);
         toast.success('Logged in with Google!');
         navigate('/dashboard');
       } catch {
         if (cancelledRef.current) return;
-        // Parallel StrictMode attempt failed after the first already stored a token — do not sign out.
-        if (getAccessToken()) return;
         toast.error('Could not complete Google sign in.');
         navigate('/login');
       }

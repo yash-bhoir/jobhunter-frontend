@@ -97,10 +97,9 @@ api.interceptors.response.use(
       try {
         const refreshRes = await api.post('/auth/refresh', {}, { _skipAuthRefresh: true });
         const next = refreshRes.data?.data?.accessToken;
-        if (next) {
-          setAccessToken(next);
-          clearAuthRefreshCircuit();
-        }
+        if (next) setAccessToken(next);
+        else clearAccessToken(); // drop stale sessionStorage token so cookie takes over
+        clearAuthRefreshCircuit();
         processQueue(null);
         return api(original);
       } catch (refreshErr) {
