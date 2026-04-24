@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { api } from '@utils/axios';
+import { api, cancelPendingRefresh } from '@utils/axios';
 import { setAccessToken, clearAccessToken, clearAuthRefreshCircuit } from '@utils/accessToken';
 
 const AuthContext = createContext(null);
@@ -42,6 +42,7 @@ export function AuthProvider({ children }) {
   }, [fetchMe]);
 
   const login = async (credentials) => {
+    cancelPendingRefresh(); // abort any stale token-refresh so it can't redirect back to /login
     authGenRef.current += 1;
     meAbortRef.current?.abort();
     try {

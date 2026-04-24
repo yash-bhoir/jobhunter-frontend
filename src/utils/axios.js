@@ -54,12 +54,26 @@ api.interceptors.request.use((config) => {
 });
 
 // Handle responses
-let isRefreshing  = false;
-let failedQueue   = [];
+let isRefreshing             = false;
+let failedQueue              = [];
+let pendingRefreshController = null; // AbortController for the in-flight refresh
 
 const processQueue = (error) => {
   failedQueue.forEach(p => error ? p.reject(error) : p.resolve());
   failedQueue = [];
+};
+
+/**
+ * Cancel any in-flight token-refresh so it cannot redirect the user back to /login
+ * after a concurrent explicit login has already succeeded.
+ * Queued requests are resolved (not rejected) so they retry with the fresh cookies.
+ */
+export const cancelPendingRefresh = () => {
+  if (!pendingRefreshController) return;
+  pendingRefreshController.abort();
+  processQueue(null); // let queued requests retry with new cookies
+  pendingRefreshController = null;
+  isRefreshing = false;
 };
 
 api.interceptors.response.use(
@@ -91,11 +105,15 @@ api.interceptors.response.use(
         }).then(() => api(original));
       }
 
-      original._retry = true;
-      isRefreshing    = true;
+      original._retry      = true;
+      isRefreshing         = true;
+      pendingRefreshController = new AbortController();
 
       try {
-        const refreshRes = await api.post('/auth/refresh', {}, { _skipAuthRefresh: true });
+        const refreshRes = await api.post('/auth/refresh', {}, {
+          _skipAuthRefresh: true,
+          signal: pendingRefreshController.signal,
+        });
         const next = refreshRes.data?.data?.accessToken;
         if (next) setAccessToken(next);
         else clearAccessToken(); // drop stale sessionStorage token so cookie takes over
@@ -103,12 +121,18 @@ api.interceptors.response.use(
         processQueue(null);
         return api(original);
       } catch (refreshErr) {
+        // Aborted by cancelPendingRefresh() — a concurrent login succeeded.
+        // Queued requests were already resolved; just exit silently.
+        if (refreshErr?.code === 'ERR_CANCELED' || refreshErr?.name === 'CanceledError') {
+          return Promise.reject(refreshErr);
+        }
         processQueue(refreshErr);
         openAuthRefreshCircuit();
         clearAccessToken();
         window.location.replace('/login');
         return Promise.reject(refreshErr);
       } finally {
+        pendingRefreshController = null;
         isRefreshing = false;
       }
     }
